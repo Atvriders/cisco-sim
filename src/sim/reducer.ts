@@ -263,7 +263,7 @@ export function reducer(state: SimState, action: SimAction): SimState {
       // Push to history if non-empty
       let newHistory = session.commandHistory;
       let newHistoryIndex = -1;
-      if (input.trim()) {
+      if (input.trim() && !input.endsWith('?')) {
         newHistory = [input, ...session.commandHistory.slice(0, 99)];
       }
 
@@ -295,7 +295,9 @@ export function reducer(state: SimState, action: SimAction): SimState {
       }
 
       const newSessions = state.sessions.map(s => s.id === state.activeSessionId ? updatedSession : s);
-      return { ...state, sessions: newSessions, currentInput: '' };
+      // For ? help queries, restore the input (minus the ?) so the user can continue typing
+      const nextInput = input.endsWith('?') ? input.slice(0, -1) : '';
+      return { ...state, sessions: newSessions, currentInput: nextInput };
     }
 
     case 'HISTORY_UP': {
