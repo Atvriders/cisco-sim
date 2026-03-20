@@ -351,6 +351,22 @@ function showRunningConfig(state: DeviceState): string[] {
     }
   }
 
+  // DHCP Snooping
+  if (state.dhcpSnooping.enabled || state.dhcpSnooping.vlans.length > 0) {
+    ls.push('!');
+    if (state.dhcpSnooping.vlans.length > 0) {
+      ls.push(`ip dhcp snooping vlan ${vlansToString(state.dhcpSnooping.vlans)}`);
+    }
+    if (state.dhcpSnooping.enabled) ls.push('ip dhcp snooping');
+    if (!state.dhcpSnooping.option82) ls.push('no ip dhcp snooping information option');
+  }
+
+  // DAI
+  if (state.dai.vlans.length > 0) {
+    ls.push('!');
+    ls.push(`ip arp inspection vlan ${vlansToString(state.dai.vlans)}`);
+  }
+
   // NTP
   ls.push('!');
   for (const s of state.ntp.servers) ls.push(`ntp server ${s}`);
