@@ -1,4 +1,4 @@
-import type { CommandHandler, TerminalLine, DeviceState, Vlan, OspfConfig, EigrpConfig, BgpConfig } from '../types';
+import type { CommandHandler, TerminalLine, DeviceState, Vlan, OspfConfig, EigrpConfig, BgpConfig, DhcpPool } from '../types';
 import { showHandler } from './show';
 
 let _lineId = 3000;
@@ -268,6 +268,7 @@ export const configHandler: CommandHandler = (args, state, raw, negated) => {
         description: '',
         adminState: 'up' as const, lineState: 'down' as const,
         ipAddresses: [],
+        ipv6Addresses: [], ipv6Enabled: false,
         macAddress: `0019.e8a2.${(0x3c0e + vid).toString(16).padStart(4,'0')}`,
         duplex: 'full' as const, speed: 'auto' as const, mtu: 1500,
         switchportMode: 'access' as const,

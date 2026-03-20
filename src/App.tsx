@@ -6,11 +6,13 @@ import Terminal from './components/Terminal';
 import StatusPanel from './components/StatusPanel';
 import TabBar from './components/TabBar';
 import Topology from './components/Topology';
+import KeyboardHelp from './components/KeyboardHelp';
 import './App.css';
 
 export default function App() {
   const [state, dispatch] = useReducer(reducer, undefined, createInitialSimState);
   const [showTopology, setShowTopology] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const bootIndexRef = useRef(0);
 
@@ -51,15 +53,24 @@ export default function App() {
     };
   }, []);
 
-  // Ctrl+Z global handler + Escape to close topology
+  // Ctrl+Z global handler + Escape to close topology + F1 / Ctrl+? for help
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
       if (e.ctrlKey && e.key === 'z') {
         e.preventDefault();
         dispatch({ type: 'EXECUTE', input: 'end' });
       }
+      if (e.key === 'F1') {
+        e.preventDefault();
+        setShowHelp(v => !v);
+      }
+      if (e.ctrlKey && e.key === '?') {
+        e.preventDefault();
+        setShowHelp(v => !v);
+      }
       if (e.key === 'Escape') {
         setShowTopology(false);
+        setShowHelp(false);
       }
     };
     window.addEventListener('keydown', handleKey);
@@ -82,6 +93,13 @@ export default function App() {
     <div className="app">
       <div className="app-title-bar">
         CISCO IOS SIMULATOR&nbsp;&nbsp;|&nbsp;&nbsp;WS-C2960X-48TS-L&nbsp;&nbsp;|&nbsp;&nbsp;IOS 15.7(3)M3
+        <button
+          className="help-f1-btn"
+          onClick={() => setShowHelp(v => !v)}
+          title="Keyboard shortcuts (F1)"
+        >
+          F1
+        </button>
       </div>
       <div className="app-tabs">
         <TabBar
@@ -118,6 +136,8 @@ export default function App() {
       </div>
       {/* CRT vignette overlay */}
       <div className="crt-vignette" />
+      {/* Keyboard help overlay */}
+      {showHelp && <KeyboardHelp onClose={() => setShowHelp(false)} />}
     </div>
   );
 }

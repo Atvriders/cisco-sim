@@ -118,6 +118,7 @@ export default function Terminal({ sessionState, onDispatch, currentInput }: Pro
         onDown={handleDown}
         onFocusRef={inputFocusTriggerRef}
         mode={sessionState.deviceState.mode}
+        commandHistory={sessionState.commandHistory}
       />
     </div>
   );

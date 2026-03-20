@@ -1329,17 +1329,29 @@ function applyRunningConfigSection(lines: string[], keyword: string): string[] {
 
 function showIpProtocols(state: DeviceState): string[] {
   const ls: string[] = [];
+  ls.push('*** IP Routing is NSF aware ***');
+  ls.push('');
+
   if (state.ospf) {
     const o = state.ospf;
     ls.push(`Routing Protocol is "ospf ${o.processId}"`);
     ls.push(`  Outgoing update filter list for all interfaces is not set`);
     ls.push(`  Incoming update filter list for all interfaces is not set`);
     ls.push(`  Router ID ${o.routerId || '0.0.0.0'}`);
-    ls.push(`  Number of areas in this router is 1. 1 normal 0 stub 0 nssa`);
+    const areaCount = new Set(o.networks.map(n => n.area)).size || 1;
+    ls.push(`  Number of areas in this router is ${areaCount}. ${areaCount} normal 0 stub 0 nssa`);
     ls.push(`  Maximum path: 4`);
     ls.push(`  Routing for Networks:`);
     for (const n of o.networks) {
       ls.push(`    ${n.network} ${n.wildcard} area ${n.area}`);
+    }
+    if (o.passiveInterfaces.length > 0) {
+      ls.push(`  Passive Interface(s):`);
+      for (const pi of o.passiveInterfaces) {
+        ls.push(`    ${pi}`);
+      }
+    } else {
+      ls.push(`  Passive Interface(s):`);
     }
     ls.push(`  Routing Information Sources:`);
     ls.push(`    Gateway         Distance      Last Update`);
@@ -1349,6 +1361,7 @@ function showIpProtocols(state: DeviceState): string[] {
     ls.push(`  Distance: (default is 110)`);
     ls.push('');
   }
+
   if (state.eigrp) {
     const e = state.eigrp;
     ls.push(`Routing Protocol is "eigrp ${e.asNumber}"`);
@@ -1369,7 +1382,29 @@ function showIpProtocols(state: DeviceState): string[] {
     ls.push(`  Distance: internal 90 external 170`);
     ls.push('');
   }
-  if (!state.ospf && !state.eigrp) {
+
+  if (state.bgp) {
+    const b = state.bgp;
+    ls.push(`Routing Protocol is "bgp ${b.asNumber}"`);
+    ls.push(`  Outgoing update filter list for all interfaces is not set`);
+    ls.push(`  Incoming update filter list for all interfaces is not set`);
+    ls.push(`  IGP synchronization is disabled`);
+    ls.push(`  Automatic route summarization is disabled`);
+    ls.push(`  Maximum path: 1`);
+    ls.push(`  Routing for Networks:`);
+    for (const n of b.networks) {
+      ls.push(`    ${n.network}${n.mask ? ' mask ' + n.mask : ''}`);
+    }
+    ls.push(`  Routing Information Sources:`);
+    ls.push(`    Gateway         Distance      Last Update`);
+    for (const nb of b.neighbors) {
+      ls.push(`    ${padRight(nb.address, 16)}   ${padLeft(String(200), 8)}      ${nb.uptime}`);
+    }
+    ls.push(`  Distance: external 20 internal 200 local 200`);
+    ls.push('');
+  }
+
+  if (!state.ospf && !state.eigrp && !state.bgp) {
     ls.push('');
   }
   return ls;
