@@ -1,0 +1,217 @@
+export type CliMode =
+  | 'user-exec'
+  | 'priv-exec'
+  | 'global-config'
+  | 'if-config'
+  | 'vlan-config'
+  | 'line-config'
+  | 'router-ospf'
+  | 'router-eigrp'
+  | 'router-bgp';
+
+export type ModeContext =
+  | { type: 'none' }
+  | { type: 'interface'; interfaceId: string }
+  | { type: 'vlan'; vlanId: number }
+  | { type: 'line'; lineType: 'console' | 'vty' | 'aux'; start: number; end: number }
+  | { type: 'router-ospf'; processId: number }
+  | { type: 'router-eigrp'; asNumber: number }
+  | { type: 'router-bgp'; asNumber: number };
+
+export type InterfaceLineState = 'up' | 'down' | 'notconnect' | 'notpresent' | 'err-disabled';
+export type SwitchportMode = 'access' | 'trunk' | 'dynamic-auto' | 'dynamic-desirable';
+export type DuplexMode = 'auto' | 'full' | 'half';
+export type SpeedSetting = 'auto' | '10' | '100' | '1000';
+
+export interface IpAddress { address: string; mask: string; secondary?: boolean; }
+
+export interface SpanningTreePortConfig {
+  portfast: boolean; bpduguard: boolean; bpdufilter: boolean;
+  cost?: number; priority?: number;
+  state: 'blocking' | 'listening' | 'learning' | 'forwarding' | 'disabled';
+  role: 'root' | 'designated' | 'alternate' | 'backup' | 'disabled';
+}
+
+export interface PortSecurity {
+  enabled: boolean; maxMacAddresses: number;
+  violation: 'protect' | 'restrict' | 'shutdown';
+  stickyLearning: boolean; learnedAddresses: string[];
+}
+
+export interface Interface {
+  id: string; slot: number; port: number;
+  description: string;
+  adminState: 'up' | 'down';
+  lineState: InterfaceLineState;
+  ipAddresses: IpAddress[];
+  macAddress: string;
+  duplex: DuplexMode; speed: SpeedSetting; mtu: number;
+  switchportMode: SwitchportMode;
+  accessVlan: number; trunkAllowedVlans: string; trunkNativeVlan: number;
+  spanningTree: SpanningTreePortConfig;
+  portSecurity: PortSecurity;
+  ipHelperAddresses: string[];
+  ipAccessGroups: { acl: string; direction: 'in' | 'out' }[];
+  channelGroup?: { number: number; mode: 'active' | 'passive' | 'on' };
+  ospfCost?: number; ospfPriority?: number;
+  inputPackets: number; outputPackets: number;
+  inputErrors: number; outputErrors: number;
+  inputBytes: number; outputBytes: number;
+  lastClear: number;
+  broadcastLevel?: number;
+}
+
+export interface Vlan {
+  id: number; name: string;
+  state: 'active' | 'suspend' | 'act/unsup';
+  ports: string[];
+}
+
+export interface MacEntry {
+  vlan: number; mac: string;
+  type: 'dynamic' | 'static' | 'secure-dynamic' | 'secure-static';
+  port: string; age: number;
+}
+
+export interface ArpEntry {
+  address: string; age: number; mac: string;
+  type: 'ARPA'; interface: string;
+}
+
+export interface Route {
+  source: 'C' | 'L' | 'S' | 'O' | 'D' | 'B' | 'R' | '*' | 'I';
+  network: string; mask: string;
+  adminDistance: number; metric: number;
+  nextHop?: string; interface?: string; age: string;
+}
+
+export interface SpanningTreeVlan {
+  vlanId: number;
+  rootBridgePriority: number; rootBridgeMac: string; rootBridgeIsLocal: boolean;
+  localBridgePriority: number; localBridgeMac: string;
+  rootPort?: string; rootCost: number;
+  helloTime: number; forwardDelay: number; maxAge: number;
+}
+
+export interface CdpNeighbor {
+  deviceId: string; localInterface: string; holdtime: number;
+  capability: string; platform: string; remoteInterface: string;
+  ipAddress?: string; iosVersion?: string; nativeVlan?: number; duplex?: string;
+}
+
+export interface OspfNeighbor {
+  neighborId: string; priority: number;
+  state: 'FULL' | 'EXSTART' | 'EXCHANGE' | '2WAY' | 'DOWN' | 'INIT';
+  deadTime: string; address: string; interface: string;
+}
+
+export interface OspfConfig {
+  processId: number; routerId?: string;
+  networks: { network: string; wildcard: string; area: number }[];
+  redistributeConnected: boolean; redistributeStatic: boolean;
+  defaultInformationOriginate: boolean; passiveInterfaces: string[];
+  neighbors: OspfNeighbor[];
+}
+
+export interface EigrpNeighbor {
+  address: string; interface: string; holdtime: number;
+  srtt: number; rto: number; q: number; seq: number;
+}
+
+export interface EigrpConfig {
+  asNumber: number; networks: { network: string; wildcard?: string }[];
+  passiveInterfaces: string[]; redistributeConnected: boolean; redistributeStatic: boolean;
+  neighbors: EigrpNeighbor[];
+}
+
+export interface BgpNeighbor {
+  address: string; remoteAs: number;
+  state: 'Established' | 'Active' | 'Idle' | 'Connect' | 'OpenSent' | 'OpenConfirm';
+  uptime: string; prefixesReceived: number;
+}
+
+export interface BgpConfig {
+  asNumber: number; routerId?: string;
+  networks: { network: string; mask?: string }[];
+  neighbors: BgpNeighbor[];
+}
+
+export interface AclEntry {
+  sequence: number; action: 'permit' | 'deny';
+  protocol?: string; source: string; sourceMask?: string;
+  destination?: string; destinationMask?: string; log?: boolean; matches: number;
+}
+
+export interface Acl { name: string; type: 'standard' | 'extended'; entries: AclEntry[]; }
+
+export interface LocalUser { username: string; privilege: number; secret?: string; password?: string; }
+
+export interface LineConfig {
+  line: 'console' | 'vty' | 'aux'; start: number; end: number;
+  login: 'none' | 'password' | 'local' | 'tacacs'; password?: string;
+  execTimeout: number; transportInput: string[];
+  loggingSynchronous: boolean; privilegeLevel: number;
+}
+
+export interface NtpConfig {
+  servers: string[]; synchronized: boolean;
+  referenceServer?: string; stratum: number; offset: number;
+}
+
+export interface DeviceState {
+  hostname: string; domainName: string; banner: string;
+  mode: CliMode; modeContext: ModeContext;
+  interfaces: Record<string, Interface>;
+  vlans: Record<number, Vlan>;
+  macTable: MacEntry[];
+  spanningTree: Record<number, SpanningTreeVlan>;
+  arpTable: ArpEntry[];
+  routes: Route[];
+  ipRoutingEnabled: boolean; defaultGateway?: string;
+  ospf?: OspfConfig; eigrp?: EigrpConfig; bgp?: BgpConfig;
+  enableSecret?: string; enablePassword?: string;
+  servicePasswordEncryption: boolean;
+  users: LocalUser[];
+  acls: Record<string, Acl>;
+  cryptoKeyRsa?: { modulus: number; generated: string };
+  lines: LineConfig[];
+  cdpEnabled: boolean; cdpNeighbors: CdpNeighbor[];
+  ntp: NtpConfig;
+  loggingEnabled: boolean; loggingServer?: string;
+  loggingBuffer: string[]; syslogLevel: number;
+  startupConfig?: Omit<DeviceState, 'startupConfig'>;
+  unsavedChanges: boolean;
+  bootTime: number; currentTime: number;
+}
+
+export interface TerminalLine {
+  id: string;
+  type: 'input' | 'output' | 'error' | 'info' | 'system' | 'success';
+  text: string;
+}
+
+export interface SessionState {
+  id: number; label: string;
+  lines: TerminalLine[];
+  commandHistory: string[];
+  historyIndex: number;
+  deviceState: DeviceState;
+  booted: boolean;
+  pendingInput?: string;
+  pendingCommand?: string;
+}
+
+export type CommandHandler = (
+  args: string[], state: DeviceState, raw: string, negated: boolean
+) => CommandResult;
+
+export interface CommandResult {
+  output: TerminalLine[];
+  newState?: Partial<DeviceState>;
+  newMode?: CliMode;
+  newContext?: ModeContext;
+  bell?: boolean;
+  asyncLines?: { text: string; delay: number; type: TerminalLine['type'] }[];
+  pendingInput?: string;
+  pendingCommand?: string;
+}
