@@ -1714,36 +1714,179 @@ function showIpAccessLists(state: DeviceState): string[] {
   return ls;
 }
 
-function showIpDhcpBinding(_state: DeviceState): string[] {
-  return [
-    'Bindings from all pools not associated with VRF:',
-    'IP address          Client-ID/              Lease expiration        Type       State      Interface',
-    '                    Hardware address/',
-    '                    User name',
-    '10.10.10.100        0100.1a2b.3c4d.5e       Mar 21 2026 12:00 AM    Automatic  Active     Vlan10',
-    '10.10.10.101        0100.2b3c.4d5e.6f       Mar 21 2026 12:00 AM    Automatic  Active     Vlan10',
-    '10.20.20.100        0100.3c4d.5e6f.7a       Mar 21 2026 12:00 AM    Automatic  Active     Vlan20',
-  ];
+function showIpDhcpBinding(state: DeviceState): string[] {
+  const ls: string[] = [];
+  ls.push('Bindings from all pools not associated with VRF:');
+  ls.push('IP address          Client-ID/              Lease expiration        Type       State      Interface');
+  ls.push('                    Hardware address/');
+  ls.push('                    User name');
+  for (const b of state.dhcpBindings) {
+    const rawMac = b.mac.replace(/\./g, '');
+    const clientId = ('0100' + rawMac).slice(0, 22);
+    ls.push(
+      `${padRight(b.ip, 20)}${padRight(clientId, 24)}${padRight(b.leaseExpiry, 24)}${padRight(b.type, 11)}${padRight(b.state, 11)}${b.interface}`
+    );
+  }
+  return ls;
 }
 
-function showIpDhcpPool(_state: DeviceState): string[] {
-  return [
-    'Pool DATA-POOL :',
-    ' Utilization mark (high/low)    : 100 / 0',
-    ' Subnet size (first/next)       : 0 / 0 ',
-    ' Total addresses                : 254',
-    ' Leased addresses               : 3',
-    ' Pending event                  : none',
-    ' 1 subnet is currently in the pool :',
-    ' Current index        IP address range                    Leased addresses',
-    ' 10.10.10.102         10.10.10.1       - 10.10.10.254      3',
-  ];
+function showIpDhcpPool(state: DeviceState): string[] {
+  const ls: string[] = [];
+  function dhcpIpToNum(ip: string): number {
+    return ip.split('.').reduce((acc: number, o: string) => (acc << 8) + parseInt(o), 0) >>> 0;
+  }
+  function dhcpNumToIp(n: number): string {
+    return [(n >>> 24) & 0xff, (n >>> 16) & 0xff, (n >>> 8) & 0xff, n & 0xff].join('.');
+  }
+  for (const pool of state.dhcpPools) {
+    const maskNum = dhcpIpToNum(pool.mask);
+    const networkNum = dhcpIpToNum(pool.network);
+    const cidr = maskToCidr(pool.mask);
+    const hostBits = 32 - cidr;
+    const totalAddresses = hostBits > 0 ? (1 << hostBits) - 2 : 0;
+    const leasedCount = state.dhcpBindings.filter(b => {
+      const bNum = dhcpIpToNum(b.ip);
+      return (bNum & maskNum) >>> 0 === networkNum;
+    }).length;
+    const firstHost = dhcpNumToIp(networkNum + 1);
+    const broadcastNum = (networkNum | (~maskNum >>> 0)) >>> 0;
+    const lastHost = dhcpNumToIp(broadcastNum - 1);
+    const nextIndex = leasedCount > 0 ? dhcpNumToIp(networkNum + leasedCount + 1) : firstHost;
+    ls.push(`Pool ${pool.name} :`);
+    ls.push(` Utilization mark (high/low)    : 100 / 0`);
+    ls.push(` Subnet size (first/next)       : 0 / 0 `);
+    ls.push(` Total addresses                : ${totalAddresses}`);
+    ls.push(` Leased addresses               : ${leasedCount}`);
+    ls.push(` Pending event                  : none`);
+    ls.push(` 1 subnet is currently in the pool :`);
+    ls.push(` Current index        IP address range                    Leased addresses`);
+    ls.push(` ${padRight(nextIndex, 22)}${padRight(firstHost, 18)} - ${padRight(lastHost, 18)} ${leasedCount}`);
+  }
+  return ls;
 }
 
 function showIpDhcpConflict(_state: DeviceState): string[] {
   return [
     'There is no record for 0 conflicting address',
   ];
+}
+
+function showIpDhcpServerStatistics(state: DeviceState): string[] {
+  const totalBindings = state.dhcpBindings.filter(b => b.state === 'Active').length;
+  const expiredBindings = state.dhcpBindings.filter(b => b.state === 'Expired').length;
+  return [
+    'Memory usage         : 42310',
+    `Address pools        : ${state.dhcpPools.length}`,
+    `Database agents      : 0`,
+    `Automatic bindings   : ${totalBindings}`,
+    `Manual bindings      : 0`,
+    `Expired bindings     : ${expiredBindings}`,
+    `Malformed messages   : 0`,
+    '',
+    'Message              Received',
+    'BOOTREQUEST          0',
+    `DHCPDISCOVER         ${totalBindings}`,
+    `DHCPREQUEST          ${totalBindings}`,
+    'DHCPDECLINE          0',
+    'DHCPRELEASE          0',
+    'DHCPINFORM           0',
+    '',
+    'Message              Sent',
+    'BOOTREPLY            0',
+    `DHCPOFFER            ${totalBindings}`,
+    `DHCPACK              ${totalBindings}`,
+    'DHCPNAK              0',
+  ];
+}
+
+function showIpNatTranslations(state: DeviceState): string[] {
+  const ls: string[] = [];
+  ls.push('Pro Inside global      Inside local       Outside local      Outside global');
+  for (const t of state.natTranslations) {
+    const proto = t.protocol ? t.protocol.toLowerCase() : '---';
+    const ig = t.outsidePort ? `${t.insideGlobal}:${t.outsidePort}` : t.insideGlobal;
+    const il = t.insidePort ? `${t.inside}:${t.insidePort}` : t.inside;
+    const ol = t.outside || '---';
+    const og = t.outsideGlobal || '---';
+    ls.push(`${padRight(proto, 4)} ${padRight(ig, 22)} ${padRight(il, 18)} ${padRight(ol, 18)} ${og}`);
+  }
+  for (const sm of state.natConfig.staticMappings) {
+    const already = state.natTranslations.some(t => t.inside === sm.localIp);
+    if (!already) {
+      ls.push(`--- ${padRight(sm.globalIp, 22)} ${padRight(sm.localIp, 18)} ---                ---`);
+    }
+  }
+  return ls;
+}
+
+function showIpNatStatistics(state: DeviceState): string[] {
+  const totalActive = state.natTranslations.length + state.natConfig.staticMappings.length;
+  const dynamicCount = state.natTranslations.filter(t => t.type === 'dynamic').length;
+  const patCount = state.natTranslations.filter(t => t.type === 'pat').length;
+  return [
+    `Total active translations: ${totalActive} (${state.natConfig.staticMappings.length} static, ${dynamicCount} dynamic; ${patCount} extended)`,
+    `Peak translations: ${totalActive}, occurred 00:00:00 ago`,
+    `Outside interfaces:`,
+    ...state.natConfig.outsideInterfaces.map(i => `  ${i}`),
+    `Inside interfaces:`,
+    ...state.natConfig.insideInterfaces.map(i => `  ${i}`),
+    `Hits: 0  Misses: 0`,
+    `CEF Translated packets: 0, CEF Punted packets: 0`,
+    `Expired translations: 0`,
+    `Dynamic mappings:`,
+    ...(state.natConfig.accessList && state.natConfig.pools.length > 0
+      ? [
+          ` -- Inside Source`,
+          `[Id: 1] access-list ${state.natConfig.accessList} pool ${state.natConfig.pools[0].name} refcount ${dynamicCount + patCount}`,
+        ]
+      : []),
+    `Total doors: 0`,
+    `Appl doors: 0`,
+    `Normal doors: 0`,
+    `Queued Packets: 0`,
+  ];
+}
+
+function showStandbyDetail(state: DeviceState): string[] {
+  const ls: string[] = [];
+  if (state.hsrpGroups.length === 0) {
+    ls.push('There are no HSRP groups configured.');
+    return ls;
+  }
+  for (const g of state.hsrpGroups) {
+    const macSuffix = g.groupNumber.toString(16).padStart(2, '0');
+    ls.push(`${g.interfaceId} - Group ${g.groupNumber}`);
+    ls.push(`  State is ${g.state}`);
+    ls.push(`    1 state change, last state change 00:01:34`);
+    ls.push(`  Virtual IP address is ${g.virtualIp}`);
+    ls.push(`  Active virtual MAC address is 0000.0c07.ac${macSuffix}`);
+    ls.push(`    Local virtual MAC address is 0000.0c07.ac${macSuffix} (v1 default)`);
+    ls.push(`  Hello time ${g.helloTime} sec, hold time ${g.holdTime} sec`);
+    ls.push(`    Next hello sent in 1.200 secs`);
+    if (g.authentication) ls.push(`  Authentication text, string "${g.authentication}"`);
+    ls.push(`  Preemption ${g.preempt ? 'enabled' : 'disabled'}`);
+    if (g.preempt) ls.push(`    min delay 0 sec, reload delay 0 sec`);
+    ls.push(`  Active router is ${g.activeRouter}, priority ${g.priority} expires in ${g.holdTime - 1}.400 sec`);
+    ls.push(`  Standby router is ${g.standbyRouter}, priority ${g.priority - 10} expires in ${g.holdTime - 2}.800 sec`);
+    ls.push(`  Priority ${g.priority} (configured ${g.priority})`);
+    ls.push(`  Group name is "hsrp-${g.interfaceId}-${g.groupNumber}" (default)`);
+  }
+  return ls;
+}
+
+function showStandbyBrief(state: DeviceState): string[] {
+  const ls: string[] = [];
+  ls.push('                     P indicates configured to preempt.');
+  ls.push('                     |');
+  ls.push('Interface   Grp  Pri P State    Active          Standby         Virtual IP');
+  for (const g of state.hsrpGroups) {
+    const preemptFlag = g.preempt ? 'P' : ' ';
+    const ifShort = g.interfaceId.replace('FastEthernet', 'Fa').replace('GigabitEthernet', 'Gi');
+    ls.push(
+      `${padRight(ifShort, 12)}${padRight(String(g.groupNumber), 5)}${padRight(String(g.priority), 4)}${preemptFlag} ${padRight(g.state, 9)}${padRight(g.activeRouter, 16)}${padRight(g.standbyRouter, 16)}${g.virtualIp}`
+    );
+  }
+  return ls;
 }
 
 function showSessions(_state: DeviceState): string[] {
@@ -3966,6 +4109,10 @@ export const showHandler: CommandHandler = (args, state, _raw, _negated) => {
 
   if (sub.startsWith('int') || sub === 'int') {
     const sub2lower = sub2.toLowerCase();
+    // show interfaces description
+    if (sub2lower === 'description') {
+      return makeResult(showInterfacesDescription(state));
+    }
     // show interfaces status
     if (sub2lower === 'status') {
       return makeResult(showInterfacesStatus(state));
