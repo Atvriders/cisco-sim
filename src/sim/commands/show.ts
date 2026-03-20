@@ -2431,6 +2431,277 @@ function showIpCache(_state: DeviceState): string[] {
   ];
 }
 
+function showErrdisableRecovery(_state: DeviceState): string[] {
+  return [
+    'ErrDisable Reason            Timer Status   Timer Interval',
+    '-----------------            -------------- --------------',
+    'arp-inspection               Disabled        300',
+    'bpduguard                    Disabled        300',
+    'channel-misconfig (STP)      Disabled        300',
+    'dhcp-rate-limit              Disabled        300',
+    'dtp-flap                     Disabled        300',
+    'gbic-invalid                 Disabled        300',
+    'inline-power                 Disabled        300',
+    'l2ptguard                    Disabled        300',
+    'link-flap                    Disabled        300',
+    'mac-limit                    Disabled        300',
+    'link-monitor-failure         Disabled        300',
+    'loopback                     Disabled        300',
+    'oam-remote-failure           Disabled        300',
+    'pagp-flap                    Disabled        300',
+    'port-mode-failure            Disabled        300',
+    'psecure-violation            Enabled         300',
+    'security-violation           Disabled        300',
+    'sfp-config-mismatch          Disabled        300',
+    'storm-control                Disabled        300',
+    'udld                         Disabled        300',
+    'vmps                         Disabled        300',
+    '',
+    'Timer interval: 300 seconds',
+    '',
+    'Interfaces that will be enabled at the next timeout:',
+    'Interface      Errdisable reason      Time left(sec)',
+    '---------      -----------------      --------------',
+    'Fa0/7          psecure-violation      247',
+  ];
+}
+
+function showErrdisableDetect(_state: DeviceState): string[] {
+  return [
+    'ErrDisable Reason            Detection        Mode',
+    '-----------------            ---------        ----',
+    'arp-inspection               Enabled          port',
+    'bpduguard                    Enabled          port',
+    'channel-misconfig (STP)      Enabled          port',
+    'dhcp-rate-limit              Enabled          port',
+    'dtp-flap                     Enabled          port',
+    'gbic-invalid                 Enabled          port',
+    'inline-power                 Enabled          port',
+    'l2ptguard                    Enabled          port',
+    'link-flap                    Enabled          port',
+    'loopback                     Enabled          port',
+    'pagp-flap                    Enabled          port',
+    'psecure-violation            Enabled          port/vlan',
+    'security-violation           Enabled          port/vlan',
+    'sfp-config-mismatch          Enabled          port',
+    'storm-control                Enabled          port',
+    'udld                         Enabled          port',
+    'vmps                         Enabled          port',
+  ];
+}
+
+function showInterfacesSwitchport(state: DeviceState, ifFilter?: string): string[] {
+  const ls: string[] = [];
+  const ifaces = ifFilter
+    ? ([state.interfaces[ifFilter]].filter(Boolean) as Interface[])
+    : sortInterfaces(Object.values(state.interfaces)).filter(
+        i => i.id.startsWith('Fa') || i.id.startsWith('Gi')
+      );
+
+  for (const iface of ifaces) {
+    if (!iface) continue;
+    const shortId = shortIfName(iface.id);
+    const isTrunk = iface.switchportMode === 'trunk';
+    const adminMode = isTrunk ? 'trunk' : 'static access';
+    const operMode = isTrunk ? 'trunk' : 'static access';
+    const operEnc = isTrunk ? 'dot1q' : 'native';
+    const negTrunk = isTrunk ? 'On' : 'Off';
+    const accessVlanName = state.vlans[iface.accessVlan]?.name || 'inactive';
+    const nativeVlanName = state.vlans[iface.trunkNativeVlan]?.name || 'inactive';
+    const allowedVlans = iface.trunkAllowedVlans || 'ALL';
+
+    ls.push(`Name: ${shortId}`);
+    ls.push('Switchport: Enabled');
+    ls.push(`Administrative Mode: ${adminMode}`);
+    ls.push(`Operational Mode: ${operMode}`);
+    ls.push('Administrative Trunking Encapsulation: dot1q');
+    ls.push(`Operational Trunking Encapsulation: ${operEnc}`);
+    ls.push(`Negotiation of Trunking: ${negTrunk}`);
+    ls.push(`Access Mode VLAN: ${iface.accessVlan} (${accessVlanName})`);
+    ls.push(`Trunking Native Mode VLAN: ${iface.trunkNativeVlan} (${nativeVlanName})`);
+    ls.push('Administrative Native VLAN tagging: enabled');
+    ls.push('Voice VLAN: none');
+    ls.push('Administrative private-vlan host-association: none');
+    ls.push('Administrative private-vlan mapping: none');
+    ls.push('Administrative private-vlan trunk native VLAN: none');
+    ls.push('Administrative private-vlan trunk Native VLAN tagging: enabled');
+    ls.push('Administrative private-vlan trunk encapsulation: dot1q');
+    ls.push('Administrative private-vlan trunk normal VLANs: none');
+    ls.push('Administrative private-vlan trunk associations: none');
+    ls.push('Administrative private-vlan trunk mappings: none');
+    ls.push('Operational private-vlan: none');
+    ls.push(`Trunking VLANs Enabled: ${isTrunk ? allowedVlans : 'ALL'}`);
+    ls.push('Pruning VLANs Enabled: 2-1001');
+    ls.push('Capture Mode Disabled');
+    ls.push('Capture VLANs Allowed: ALL');
+    ls.push('');
+    ls.push('Protected: false');
+    ls.push('Unknown unicast blocked: disabled');
+    ls.push('Unknown multicast blocked: disabled');
+    ls.push('Appliance trust: none');
+    ls.push('');
+  }
+  return ls;
+}
+
+function showInterfacesCapabilities(state: DeviceState, ifFilter?: string): string[] {
+  const ls: string[] = [];
+  const ifaces = ifFilter
+    ? ([state.interfaces[ifFilter]].filter(Boolean) as Interface[])
+    : sortInterfaces(Object.values(state.interfaces)).filter(
+        i => i.id.startsWith('Fa') || i.id.startsWith('Gi')
+      );
+
+  for (const iface of ifaces) {
+    if (!iface) continue;
+    const isGi = iface.id.startsWith('Gi');
+    const fullId = expandIfNameFull(iface.id);
+    ls.push(fullId);
+    ls.push('  Model:                 WS-C2960X-48TS-L');
+    if (isGi) {
+      ls.push('  Type:                  1000BaseTX SFP');
+      ls.push('  Speed:                 10,100,1000,auto');
+      ls.push('  Duplex:                full,auto');
+    } else {
+      ls.push('  Type:                  10/100BaseTX');
+      ls.push('  Speed:                 10,100,auto');
+      ls.push('  Duplex:                half,full,auto');
+    }
+    ls.push('  Trunk encap. type:     802.1Q');
+    ls.push('  Trunk mode:            on,off,desirable,nonegotiate');
+    ls.push('  Channel:               yes');
+    ls.push('  Broadcast suppression: percentage(0-100)');
+    ls.push('  Flowcontrol:           rx-(off,on,desired),tx-(none)');
+    ls.push('  Fast Start:            yes');
+    ls.push('  QoS scheduling:        rx-(not configurable on per port basis),');
+    ls.push('                         tx-(4q3t) (3t: Two configurable values and one fixed.)');
+    ls.push('  CoS rewrite:           yes');
+    ls.push('  ToS rewrite:           yes');
+    ls.push('  UDLD:                  yes');
+    ls.push('  Inline power:          no');
+    ls.push('  SPAN:                  source/destination');
+    ls.push('  PortSecure:            yes');
+    ls.push('  Dot1x:                 yes');
+    ls.push('');
+  }
+  return ls;
+}
+
+function showIpPimNeighbor(_state: DeviceState): string[] {
+  return [
+    'PIM Neighbor Table',
+    'Mode: B - Bidir Capable, DR - Designated Router, N - Default DR Priority,',
+    '      P - Proxy Capable, S - State Refresh Capable, G - GenID Capable,',
+    '      L - DR Load-balancing Capable',
+    'Neighbor          Interface                Uptime/Expires    Ver   DR',
+    'Address                                                            Prio/Mode',
+    '192.168.1.254     Vlan1                    00:45:32/00:01:27 v2    1 / S P G',
+  ];
+}
+
+function showIpPimInterface(_state: DeviceState): string[] {
+  return [
+    'Address          Interface                Ver/   Nbr    Query  DR         DR',
+    '                                          Mode   Count  Intvl  Prior',
+    '192.168.1.1      Vlan1                    v2/S   1      30     1          192.168.1.254',
+    '10.10.10.1       Vlan10                   v2/S   0      30     1          192.168.1.1',
+  ];
+}
+
+function showIpMroute(_state: DeviceState): string[] {
+  return [
+    'IP Multicast Routing Table',
+    'Flags: D - Dense, S - Sparse, B - Bidir Group, s - SSM Group, C - Connected,',
+    '       L - Local, P - Pruned, R - RP-bit set, F - Register flag,',
+    '       T - SPT-bit set, J - Join SPT, M - MSDP created entry, E - Extranet,',
+    '       X - Proxy Join Timer Running, A - Candidate for MSDP Advertisement,',
+    '       U - URD, I - Received Source Specific Host Report,',
+    '       Z - Multicast Tunnel, z - MDT-data group sender,',
+    '       Y - Joined MDT-data group, y - Sending to MDT-data group,',
+    '       G - Received BGP C-Mroute, g - Sent BGP C-Mroute,',
+    '       N - Received BGP Shared-Tree Prune, n - BGP C-Mroute suppressed,',
+    '       Q - Received BGP S-A Route, q - Sent BGP S-A Route,',
+    '       V - RD & Vector, v - Vector, p - PIM Joins on route,',
+    '       x - VxLAN group, c - PFP-SA cache created entry',
+    'Outgoing interface flags: H - Hardware switched, A - Assert winner, p - PIM Join',
+    ' Timers: Uptime/Expires',
+    ' Interface state: Interface, Next-Hop or VCD, State/Mode',
+    '',
+    '(*, 224.0.1.40), 00:45:32/00:02:58, RP 0.0.0.0, flags: DCL',
+    '  Incoming interface: Null, RPF nbr 0.0.0.0',
+    '  Outgoing interface list:',
+    '    Vlan1, Forward/Sparse, 00:45:32/00:02:58',
+  ];
+}
+
+function showIpIgmpGroups(_state: DeviceState): string[] {
+  return [
+    'IGMP Connected Group Membership',
+    'Group Address    Interface                Uptime    Expires   Last Reporter   Group Accounted',
+    '224.0.1.40       Vlan1                    00:45:32  00:02:58  192.168.1.1',
+  ];
+}
+
+function showIpIgmpInterface(_state: DeviceState): string[] {
+  return [
+    'Vlan1 is up, line protocol is up',
+    '  Internet address is 192.168.1.1/24',
+    '  IGMP is enabled on interface',
+    '  Current IGMP host version is 2',
+    '  Current IGMP router version is 2',
+    '  IGMP query interval is 60 seconds',
+    '  IGMP configured query interval is 60 seconds',
+    '  IGMP querier timeout is 120 seconds',
+    '  IGMP max query response time is 10 seconds',
+    '  Last member query count is 2',
+    '  Last member query response interval is 1000 ms',
+    '  Inbound IGMP access group is not set',
+    '  IGMP activity: 3 joins, 0 leaves',
+    '  Multicast routing is enabled on interface',
+    '  Multicast TTL threshold is 0',
+    '  Multicast designated router (DR) is 192.168.1.254',
+    '  IGMP querying router is 192.168.1.254',
+    '  Multicast groups joined by this system (number of users):',
+    '      224.0.1.40(1)',
+  ];
+}
+
+function showMacAddressTableAgingTime(_state: DeviceState): string[] {
+  return [
+    'Global Aging Time:  300',
+    'Vlan    Aging Time',
+    '----    ----------',
+  ];
+}
+
+function showMacAddressTableCount(state: DeviceState): string[] {
+  const dynamic = state.macTable.filter(e => e.type === 'dynamic' || e.type === 'secure-dynamic').length;
+  const staticCount = state.macTable.filter(e => e.type === 'static' || e.type === 'secure-static').length;
+  const total = state.macTable.length;
+  return [
+    'MAC Entries for all vlans:',
+    `Dynamic Addresses Count  :                   ${dynamic}`,
+    `Static  Addresses Count  :                   ${staticCount}`,
+    `Total MAC Addresses      :                   ${total}`,
+    '',
+    `Total CAM Entries Used   :         ${total}`,
+    'Total CAM Entries Available :   32768',
+  ];
+}
+
+function showMacAddressTableNotification(_state: DeviceState): string[] {
+  return [
+    'MAC Notification Feature is currently disabled on the switch.',
+    'Interval between Notification Traps : 1 secs',
+    'Number of MAC Addresses Added    : 0',
+    'Number of MAC Addresses Removed  : 0',
+    '',
+    'Interface         MAC Added Trap  MAC Removed Trap  Watermark',
+    '---------         -----------     ----------------  ---------',
+  ];
+}
+
+
 function showTechSupport(state: DeviceState): string[] {
   const sections: { title: string; lines: string[] }[] = [
     { title: 'show version', lines: showVersion(state) },
