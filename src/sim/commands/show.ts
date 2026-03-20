@@ -287,6 +287,19 @@ function showRunningConfig(state: DeviceState): string[] {
     }
     if (iface.lldpTransmit === false) ls.push(' no lldp transmit');
     if (iface.lldpReceive === false) ls.push(' no lldp receive');
+    // NAT inside/outside
+    if (state.natConfig.insideInterfaces.includes(id)) ls.push(' ip nat inside');
+    if (state.natConfig.outsideInterfaces.includes(id)) ls.push(' ip nat outside');
+    // HSRP standby config
+    for (const hsrp of state.hsrpGroups.filter(g => g.interfaceId === id)) {
+      ls.push(` standby ${hsrp.groupNumber} ip ${hsrp.virtualIp}`);
+      if (hsrp.priority !== 100) ls.push(` standby ${hsrp.groupNumber} priority ${hsrp.priority}`);
+      if (hsrp.preempt) ls.push(` standby ${hsrp.groupNumber} preempt`);
+      if (hsrp.helloTime !== 3 || hsrp.holdTime !== 10) {
+        ls.push(` standby ${hsrp.groupNumber} timers ${hsrp.helloTime} ${hsrp.holdTime}`);
+      }
+      if (hsrp.authentication) ls.push(` standby ${hsrp.groupNumber} authentication ${hsrp.authentication}`);
+    }
   }
 
   ls.push('!');
@@ -382,6 +395,55 @@ function showRunningConfig(state: DeviceState): string[] {
   if (state.dai.vlans.length > 0) {
     ls.push('!');
     ls.push(`ip arp inspection vlan ${vlansToString(state.dai.vlans)}`);
+  }
+
+  // DHCP Server config
+  if (state.dhcpEnabled && (state.dhcpPools.length > 0 || state.dhcpExcludedAddresses.length > 0)) {
+    ls.push('!');
+    if (!state.dhcpEnabled) ls.push('no service dhcp');
+    for (const ex of state.dhcpExcludedAddresses) {
+      if (ex.end) {
+        ls.push(`ip dhcp excluded-address ${ex.start} ${ex.end}`);
+      } else {
+        ls.push(`ip dhcp excluded-address ${ex.start}`);
+      }
+    }
+    for (const pool of state.dhcpPools) {
+      ls.push('!');
+      ls.push(`ip dhcp pool ${pool.name}`);
+      ls.push(` network ${pool.network} ${pool.mask}`);
+      if (pool.defaultRouter) ls.push(` default-router ${pool.defaultRouter}`);
+      if (pool.dnsServer) ls.push(` dns-server ${pool.dnsServer}`);
+      if (pool.domainName) ls.push(` domain-name ${pool.domainName}`);
+      const leaseHours = pool.leaseTime;
+      const leaseDays = Math.floor(leaseHours / 24);
+      const leaseRem = leaseHours % 24;
+      if (leaseDays > 0) {
+        ls.push(` lease ${leaseDays}${leaseRem > 0 ? ' ' + leaseRem : ''}`);
+      } else {
+        ls.push(` lease 0 ${leaseHours}`);
+      }
+    }
+  }
+
+  // NAT config
+  if (state.natConfig.pools.length > 0 || state.natConfig.staticMappings.length > 0) {
+    ls.push('!');
+    for (const pool of state.natConfig.pools) {
+      ls.push(`ip nat pool ${pool.name} ${pool.startIp} ${pool.endIp} prefix-length ${pool.prefix}`);
+    }
+    for (const sm of state.natConfig.staticMappings) {
+      if (sm.protocol && sm.localPort && sm.globalPort) {
+        ls.push(`ip nat inside source static ${sm.protocol} ${sm.localIp} ${sm.localPort} ${sm.globalIp} ${sm.globalPort}`);
+      } else {
+        ls.push(`ip nat inside source static ${sm.localIp} ${sm.globalIp}`);
+      }
+    }
+    if (state.natConfig.accessList) {
+      const poolName = state.natConfig.pools[0]?.name || '';
+      const overload = state.natConfig.overload ? ' overload' : '';
+      ls.push(`ip nat inside source list ${state.natConfig.accessList} pool ${poolName}${overload}`);
+    }
   }
 
   // NTP
