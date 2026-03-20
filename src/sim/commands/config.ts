@@ -984,12 +984,197 @@ export const configHandler: CommandHandler = (args, state, raw, negated) => {
     return { output: [out(`% Unknown ipv6 subcommand: ${sub}`, 'error')] };
   }
 
+
+  // MLS QoS global enable/disable
+  if (cmd === 'mls') {
+    const mlsSub = (args[1] || '').toLowerCase();
+    if (mlsSub === 'qos') {
+      const mlsSub2 = (args[2] || '').toLowerCase();
+      if (!mlsSub2) {
+        return { output: [], newState: { qosEnabled: !negated, unsavedChanges: true } };
+      }
+      return { output: [], newState: { unsavedChanges: true } };
+    }
+    return { output: [out('% Unknown mls command', 'error')] };
+  }
+
+  // class-map [match-all|match-any] <name>
+  if (cmd === 'class-map') {
+    if (negated) {
+      const delName = args[args.length - 1];
+      return { output: [], newState: { classMaps: state.classMaps.filter(c => c.name !== delName), unsavedChanges: true } };
+    }
+    let cmName: string;
+    const matchKw = (args[1] || '').toLowerCase();
+    if (matchKw === 'match-all' || matchKw === 'match-any') {
+      cmName = args[2] || 'CLASS-DEFAULT';
+    } else {
+      cmName = args[1] || 'CLASS-DEFAULT';
+    }
+    if (!state.classMaps.some(c => c.name === cmName)) {
+      const newMap: QosClassMap = { name: cmName, matchType: 'any' };
+      return {
+        output: [out(`${state.hostname}(config-cmap)#`)],
+        newState: { classMaps: [...state.classMaps, newMap], unsavedChanges: true }
+      };
+    }
+    return { output: [out(`${state.hostname}(config-cmap)#`)] };
+  }
+
+  // match (class-map sub-commands handled at global-config level for simplicity)
+  if (cmd === 'match') {
+    if (state.classMaps.length === 0) return { output: [] };
+    const lastCmap = state.classMaps[state.classMaps.length - 1];
+    const matchSub = (args[1] || '').toLowerCase();
+    let qMatchType: QosClassMap['matchType'] = 'any';
+    let qMatchValue: string | undefined;
+    if (matchSub === 'any') { qMatchType = 'any'; }
+    else if (matchSub === 'dscp') { qMatchType = 'dscp'; qMatchValue = args[2]; }
+    else if (matchSub === 'cos') { qMatchType = 'cos'; qMatchValue = args[2]; }
+    else if (matchSub === 'access-group') { qMatchType = 'access-group'; qMatchValue = args[2]; }
+    else if (matchSub === 'ip') { qMatchType = 'ip-precedence'; qMatchValue = args[3]; }
+    const updatedCmap = { ...lastCmap, matchType: qMatchType, matchValue: qMatchValue };
+    return { output: [], newState: { classMaps: state.classMaps.map(c => c.name === lastCmap.name ? updatedCmap : c), unsavedChanges: true } };
+  }
+
+  // policy-map <name>
+  if (cmd === 'policy-map') {
+    if (negated) {
+      const delName = args[1];
+      return { output: [], newState: { policyMaps: state.policyMaps.filter(p => p.name !== delName), unsavedChanges: true } };
+    }
+    const pmName = args[1] || 'POLICY-DEFAULT';
+    if (!state.policyMaps.some(p => p.name === pmName)) {
+      const newMap: QosPolicyMap = { name: pmName, classes: [] };
+      return {
+        output: [out(`${state.hostname}(config-pmap)#`)],
+        newState: { policyMaps: [...state.policyMaps, newMap], unsavedChanges: true }
+      };
+    }
+    return { output: [out(`${state.hostname}(config-pmap)#`)] };
+  }
+
+  // class <classmap-name> (inside policy-map)
+  if (cmd === 'class') {
+    if (state.policyMaps.length === 0) return { output: [] };
+    const pmapCtx = state.policyMaps[state.policyMaps.length - 1];
+    const pClassName = args[1] || 'class-default';
+    if (!pmapCtx.classes.some(c => c.classMapName === pClassName)) {
+      const updatedPmap = { ...pmapCtx, classes: [...pmapCtx.classes, { classMapName: pClassName }] };
+      return {
+        output: [out(`${state.hostname}(config-pmap-c)#`)],
+        newState: { policyMaps: state.policyMaps.map(p => p.name === pmapCtx.name ? updatedPmap : p), unsavedChanges: true }
+      };
+    }
+    return { output: [out(`${state.hostname}(config-pmap-c)#`)] };
+  }
+
+  // police rate <bps> bps burst <bytes>
+  if (cmd === 'police') {
+    if (state.policyMaps.length === 0) return { output: [] };
+    const pmapCtx = state.policyMaps[state.policyMaps.length - 1];
+    if (pmapCtx.classes.length === 0) return { output: [] };
+    const lastPC = pmapCtx.classes[pmapCtx.classes.length - 1];
+    const rateIdx = args.indexOf('rate');
+    const burstIdx = args.indexOf('burst');
+    const pRate = rateIdx >= 0 ? parseInt(args[rateIdx + 1] || '0') : parseInt(args[1] || '0');
+    const pBurst = burstIdx >= 0 ? parseInt(args[burstIdx + 1] || '8000') : 8000;
+    const updatedPC = { ...lastPC, police: { rate: pRate, burstNormal: pBurst, burstExcess: pBurst * 2, exceedAction: 'drop' } };
+    const updatedPM = { ...pmapCtx, classes: pmapCtx.classes.map(c => c.classMapName === lastPC.classMapName ? updatedPC : c) };
+    return { output: [], newState: { policyMaps: state.policyMaps.map(p => p.name === pmapCtx.name ? updatedPM : p), unsavedChanges: true } };
+  }
+
+  // priority <kbps>
+  if (cmd === 'priority') {
+    if (state.policyMaps.length === 0) return { output: [] };
+    const pmapCtx = state.policyMaps[state.policyMaps.length - 1];
+    if (pmapCtx.classes.length === 0) return { output: [] };
+    const lastPC = pmapCtx.classes[pmapCtx.classes.length - 1];
+    const updatedPC = { ...lastPC, priority: parseInt(args[1] || '0') };
+    const updatedPM = { ...pmapCtx, classes: pmapCtx.classes.map(c => c.classMapName === lastPC.classMapName ? updatedPC : c) };
+    return { output: [], newState: { policyMaps: state.policyMaps.map(p => p.name === pmapCtx.name ? updatedPM : p), unsavedChanges: true } };
+  }
+
+  // bandwidth <kbps>
+  if (cmd === 'bandwidth') {
+    if (state.policyMaps.length === 0) return { output: [] };
+    const pmapCtx = state.policyMaps[state.policyMaps.length - 1];
+    if (pmapCtx.classes.length === 0) return { output: [] };
+    const lastPC = pmapCtx.classes[pmapCtx.classes.length - 1];
+    const updatedPC = { ...lastPC, bandwidth: parseInt(args[1] || '0') };
+    const updatedPM = { ...pmapCtx, classes: pmapCtx.classes.map(c => c.classMapName === lastPC.classMapName ? updatedPC : c) };
+    return { output: [], newState: { policyMaps: state.policyMaps.map(p => p.name === pmapCtx.name ? updatedPM : p), unsavedChanges: true } };
+  }
+
+  // set dscp|cos <val>
+  if (cmd === 'set') {
+    if (state.policyMaps.length === 0) return { output: [] };
+    const pmapCtx = state.policyMaps[state.policyMaps.length - 1];
+    if (pmapCtx.classes.length === 0) return { output: [] };
+    const lastPC = pmapCtx.classes[pmapCtx.classes.length - 1];
+    const setField = args[1] || 'dscp';
+    const setValue = args[2] || '0';
+    const updatedPC = { ...lastPC, set: { field: setField, value: setValue } };
+    const updatedPM = { ...pmapCtx, classes: pmapCtx.classes.map(c => c.classMapName === lastPC.classMapName ? updatedPC : c) };
+    return { output: [], newState: { policyMaps: state.policyMaps.map(p => p.name === pmapCtx.name ? updatedPM : p), unsavedChanges: true } };
+  }
+
+  // SPAN: monitor session <id> source|destination ...
+  if (cmd === 'monitor') {
+    const monSub = (args[1] || '').toLowerCase();
+    if (monSub === 'session') {
+      const sessionId = parseInt(args[2] || '1');
+      const monDir = (args[3] || '').toLowerCase();
+      const monType = (args[4] || '').toLowerCase();
+      const spanExisting: SpanSession = state.spanSessions.find(s => s.id === sessionId) || {
+        id: sessionId, type: 'local', sourcePorts: [], sourceVlans: []
+      };
+      let spanUpdated = { ...spanExisting };
+      if (monDir === 'source') {
+        if (monType === 'interface') {
+          const spanPort = normalizeIfId(args[5] || '') || args[5] || '';
+          const dirRaw = (args[6] || 'both').toLowerCase();
+          const spanDir = (['rx','tx','both'].includes(dirRaw) ? dirRaw : 'both') as 'rx' | 'tx' | 'both';
+          spanUpdated = { ...spanUpdated, sourcePorts: [...spanUpdated.sourcePorts.filter(p => p.port !== spanPort), { port: spanPort, direction: spanDir }] };
+        } else if (monType === 'vlan') {
+          const spanVid = parseInt(args[5] || '1');
+          spanUpdated = { ...spanUpdated, sourceVlans: [...(spanUpdated.sourceVlans || []).filter(v => v !== spanVid), spanVid] };
+        }
+      } else if (monDir === 'destination' && monType === 'interface') {
+        const spanDest = normalizeIfId(args[5] || '') || args[5] || '';
+        spanUpdated = { ...spanUpdated, destination: spanDest };
+      }
+      const newSessions = [...state.spanSessions.filter(s => s.id !== sessionId), spanUpdated];
+      return { output: [], newState: { spanSessions: newSessions, unsavedChanges: true } };
+    }
+    return { output: [out('% Unknown monitor command', 'error')] };
+  }
+
   if (cmd === 'no') {
     const sub = (args[1] || '').toLowerCase();
     if (sub === 'cdp') {
       const sub2 = (args[2] || '').toLowerCase();
       if (sub2 === 'run') {
         return { output: [], newState: { cdpEnabled: false, unsavedChanges: true } };
+      }
+    }
+    if (sub === 'monitor') {
+      const sub2 = (args[2] || '').toLowerCase();
+      if (sub2 === 'session') {
+        const idOrAll = (args[3] || '').toLowerCase();
+        if (idOrAll === 'all') {
+          return { output: [], newState: { spanSessions: [], unsavedChanges: true } };
+        }
+        const sid = parseInt(idOrAll);
+        if (!isNaN(sid)) {
+          return { output: [], newState: { spanSessions: state.spanSessions.filter(s => s.id !== sid), unsavedChanges: true } };
+        }
+      }
+    }
+    if (sub === 'mls') {
+      const sub2 = (args[2] || '').toLowerCase();
+      if (sub2 === 'qos') {
+        return { output: [], newState: { qosEnabled: false, unsavedChanges: true } };
       }
     }
     return { output: [out(`% Unknown no command: ${raw}`, 'error')] };
