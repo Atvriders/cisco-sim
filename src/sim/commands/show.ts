@@ -2454,6 +2454,545 @@ function showPortSecurityAddress(state: DeviceState): string[] {
   return ls;
 }
 
+
+function showIpOspfDatabase(state: DeviceState, subtype?: string): string[] {
+  if (!state.ospf) return ['% OSPF is not configured'];
+  const o = state.ospf;
+  const rid = o.routerId || '1.1.1.1';
+  const ls: string[] = [];
+
+  if (!subtype || subtype === 'all') {
+    ls.push(`            OSPF Router with ID (${rid}) (Process ID ${o.processId})`);
+    ls.push('');
+    ls.push('                Router Link States (Area 0)');
+    ls.push('');
+    ls.push('Link ID         ADV Router      Age         Seq#       Checksum Link count');
+    ls.push(`${padRight(rid, 16)}${padRight(rid, 16)}312         0x80000009 0x007A23 5`);
+    ls.push(`${padRight('192.168.1.254', 16)}${padRight('192.168.1.254', 16)}287         0x80000015 0x00B4E1 3`);
+    ls.push('');
+    ls.push('                Net Link States (Area 0)');
+    ls.push('');
+    ls.push('Link ID         ADV Router      Age         Seq#       Checksum');
+    ls.push(`${padRight('192.168.1.1', 16)}${padRight(rid, 16)}312         0x80000003 0x00A1B2`);
+    ls.push('');
+    ls.push('                Summary Net Link States (Area 0)');
+    ls.push('');
+    ls.push('Link ID         ADV Router      Age         Seq#       Checksum');
+    ls.push(`${padRight('10.30.30.0', 16)}${padRight('192.168.1.254', 16)}287         0x80000003 0x00C3D4`);
+    ls.push('');
+    ls.push('                AS External Link States');
+    ls.push('');
+    ls.push('Link ID         ADV Router      Age         Seq#       Checksum Tag');
+    ls.push(`${padRight('0.0.0.0', 16)}${padRight('192.168.1.254', 16)}287         0x80000001 0x00E5F6 1`);
+  } else if (subtype === 'router') {
+    ls.push(`            OSPF Router with ID (${rid}) (Process ID ${o.processId})`);
+    ls.push('');
+    ls.push('                Router Link States (Area 0)');
+    ls.push('');
+    ls.push('  LS age: 312');
+    ls.push('  Options: (No TOS-capability, DC)');
+    ls.push('  LS Type: Router Links');
+    ls.push(`  Link State ID: ${rid}`);
+    ls.push(`  Advertising Router: ${rid}`);
+    ls.push('  LS Seq Number: 80000009');
+    ls.push('  Checksum: 0x7A23');
+    ls.push('  Length: 96');
+    ls.push('  Area Border Router');
+    ls.push('  AS Boundary Router');
+    ls.push('  Number of Links: 5');
+    ls.push('');
+    ls.push('    Link connected to: a Stub Network');
+    ls.push('     (Link ID) Network/subnet number: 1.1.1.1');
+    ls.push('     (Link Data) Network Mask: 255.255.255.255');
+    ls.push('      Number of MTID metrics: 0');
+    ls.push('       TOS 0 Metrics: 1');
+    ls.push('');
+    ls.push('    Link connected to: a Transit Network');
+    ls.push('     (Link ID) Designated Router address: 192.168.1.1');
+    ls.push('     (Link Data) Router Interface address: 192.168.1.1');
+    ls.push('      Number of MTID metrics: 0');
+    ls.push('       TOS 0 Metrics: 1');
+    ls.push('');
+    ls.push('  LS age: 287');
+    ls.push('  Options: (No TOS-capability, DC)');
+    ls.push('  LS Type: Router Links');
+    ls.push('  Link State ID: 192.168.1.254');
+    ls.push('  Advertising Router: 192.168.1.254');
+    ls.push('  LS Seq Number: 80000015');
+    ls.push('  Checksum: 0xB4E1');
+    ls.push('  Length: 60');
+    ls.push('  Number of Links: 3');
+    ls.push('');
+    ls.push('    Link connected to: a Transit Network');
+    ls.push('     (Link ID) Designated Router address: 192.168.1.1');
+    ls.push('     (Link Data) Router Interface address: 192.168.1.254');
+    ls.push('      Number of MTID metrics: 0');
+    ls.push('       TOS 0 Metrics: 1');
+  } else if (subtype === 'network') {
+    ls.push(`            OSPF Router with ID (${rid}) (Process ID ${o.processId})`);
+    ls.push('');
+    ls.push('                Net Link States (Area 0)');
+    ls.push('');
+    ls.push('  LS age: 312');
+    ls.push('  Options: (No TOS-capability, DC)');
+    ls.push('  LS Type: Network Links');
+    ls.push('  Link State ID: 192.168.1.1 (address of Designated Router)');
+    ls.push(`  Advertising Router: ${rid}`);
+    ls.push('  LS Seq Number: 80000003');
+    ls.push('  Checksum: 0xA1B2');
+    ls.push('  Length: 32');
+    ls.push('  Network Mask: /24');
+    ls.push(`        Attached Router: ${rid}`);
+    ls.push('        Attached Router: 192.168.1.254');
+  } else if (subtype === 'summary') {
+    ls.push(`            OSPF Router with ID (${rid}) (Process ID ${o.processId})`);
+    ls.push('');
+    ls.push('                Summary Net Link States (Area 0)');
+    ls.push('');
+    ls.push('  LS age: 287');
+    ls.push('  Options: (No TOS-capability, DC)');
+    ls.push('  LS Type: Summary Links(Network)');
+    ls.push('  Link State ID: 10.30.30.0 (summary Network Number)');
+    ls.push('  Advertising Router: 192.168.1.254');
+    ls.push('  LS Seq Number: 80000003');
+    ls.push('  Checksum: 0xC3D4');
+    ls.push('  Length: 28');
+    ls.push('  Network Mask: /24');
+    ls.push('        MTID: 0         Metric: 1');
+  } else if (subtype === 'external') {
+    ls.push(`            OSPF Router with ID (${rid}) (Process ID ${o.processId})`);
+    ls.push('');
+    ls.push('                AS External Link States');
+    ls.push('');
+    ls.push('  LS age: 287');
+    ls.push('  Options: (No TOS-capability, DC)');
+    ls.push('  LS Type: AS External Link');
+    ls.push('  Link State ID: 0.0.0.0 (External Network Number )');
+    ls.push('  Advertising Router: 192.168.1.254');
+    ls.push('  LS Seq Number: 80000001');
+    ls.push('  Checksum: 0xE5F6');
+    ls.push('  Length: 36');
+    ls.push('  Network Mask: /0');
+    ls.push('        Metric Type: 2 (Larger than any link state path)');
+    ls.push('        MTID: 0');
+    ls.push('        Metric: 1');
+    ls.push('        Forward Address: 0.0.0.0');
+    ls.push('        External Route Tag: 1');
+  }
+  return ls;
+}
+
+function showIpOspfInterface(state: DeviceState, brief: boolean, ifFilter?: string): string[] {
+  if (!state.ospf) return ['% OSPF is not configured'];
+  const o = state.ospf;
+  const rid = o.routerId || '1.1.1.1';
+  const ls: string[] = [];
+
+  const ospfIfaces = Object.values(state.interfaces).filter(iface => {
+    if (!iface.ipAddresses.length) return false;
+    if (ifFilter) {
+      const normFilter = ifFilter.toLowerCase();
+      return iface.id.toLowerCase() === normFilter ||
+             iface.id.toLowerCase().startsWith(normFilter);
+    }
+    if (iface.id.startsWith('Loopback')) return true;
+    return o.networks.some(n => {
+      const ifaceIp = iface.ipAddresses[0]?.address || '';
+      const netParts = n.network.split('.');
+      const ifParts = ifaceIp.split('.');
+      const wcParts = n.wildcard.split('.');
+      for (let i = 0; i < 4; i++) {
+        if (wcParts[i] === '0' && netParts[i] !== ifParts[i]) return false;
+      }
+      return true;
+    });
+  });
+
+  if (brief) {
+    ls.push('Interface    PID   Area            IP Address/Mask    Cost  State Nbrs F/C');
+    for (const iface of ospfIfaces) {
+      const ip = iface.ipAddresses[0];
+      if (!ip) continue;
+      const cidr = maskToCidr(ip.mask);
+      const ipMask = `${ip.address}/${cidr}`;
+      const isLoopback = iface.id.startsWith('Loopback');
+      const stateStr = isLoopback ? 'LOOP' : 'DR';
+      const hasNeighbor = o.neighbors.some(n => n.interface === iface.id);
+      const nbrTotal = hasNeighbor ? 1 : 0;
+      const nbrFull = hasNeighbor ? 1 : 0;
+      const shortId = iface.id.replace('Vlan', 'Vl').replace('Loopback', 'Lo');
+      ls.push(`${padRight(shortId, 13)}${padLeft(String(o.processId), 3)}   ${padRight('0', 16)}${padRight(ipMask, 19)}${padLeft('1', 4)}  ${padRight(stateStr, 6)}${nbrTotal}/${nbrFull}`);
+    }
+  } else {
+    for (const iface of ospfIfaces) {
+      const ip = iface.ipAddresses[0];
+      if (!ip) continue;
+      const cidr = maskToCidr(ip.mask);
+      const isLoopback = iface.id.startsWith('Loopback');
+      const adminStr = iface.lineState === 'up' ? 'up' : 'down';
+      const protoStr = iface.lineState === 'up' ? 'up' : 'down';
+      const displayId = expandIfNameFull(iface.id);
+      ls.push(`${displayId} is ${adminStr}, line protocol is ${protoStr}`);
+      ls.push(`  Internet Address ${ip.address}/${cidr}, Area 0, Attached via Network Statement`);
+      ls.push(`  Process ID ${o.processId}, Router ID ${rid}, Network Type ${isLoopback ? 'LOOPBACK' : 'BROADCAST'}, Cost: ${iface.ospfCost || 1}`);
+      ls.push('  Topology-MTID    Cost    Disabled    Shutdown      Topology Name');
+      ls.push(`        0           ${iface.ospfCost || 1}         no          no            Base`);
+      ls.push('  Enabled by interface config, including secondary ip addresses');
+      ls.push(`  Transmit Delay is 1 sec, State ${isLoopback ? 'LOOPBACK' : 'DR'}, Priority ${iface.ospfPriority || 1}`);
+      if (!isLoopback) {
+        ls.push(`  Designated Router (ID) ${rid}, Interface address ${ip.address}`);
+        ls.push('  Backup Designated router (ID) 192.168.1.254, Interface address 192.168.1.254');
+        ls.push('  Timer intervals configured, Hello 10, Dead 40, Wait 40, Retransmit 5');
+        ls.push('    oob-resync timeout 40');
+        ls.push('    Hello due in 00:00:07');
+        ls.push('  Supports Link-local Signaling (LLS)');
+        ls.push('  Cisco NSF helper support enabled');
+        ls.push('  IETF NSF helper support enabled');
+        ls.push('  Index 1/1/1, flood queue length 0');
+        ls.push('  Next 0x0(0)/0x0(0)/0x0(0)');
+        ls.push('  Last flood scan length is 2, maximum is 3');
+        ls.push('  Last flood scan time is 0 msec, maximum is 0 msec');
+        const hasNeighbor = o.neighbors.some(n => n.interface === iface.id);
+        const nbrCount = hasNeighbor ? 1 : 0;
+        ls.push(`  Neighbor Count is ${nbrCount}, Adjacent neighbor count is ${nbrCount}`);
+        if (hasNeighbor) {
+          const nb = o.neighbors.find(n => n.interface === iface.id)!;
+          ls.push(`    Adjacent with neighbor ${nb.address}  (Backup Designated Router)`);
+        }
+        ls.push('  Suppress hello for 0 neighbor(s)');
+      } else {
+        ls.push('  No Hellos (Passive interface)');
+      }
+      ls.push('');
+    }
+  }
+  return ls;
+}
+
+function showIpOspfNeighborDetail(state: DeviceState): string[] {
+  if (!state.ospf) return ['% OSPF is not configured'];
+  const o = state.ospf;
+  const ls: string[] = [];
+  for (const nb of o.neighbors) {
+    ls.push(` Neighbor ${nb.neighborId}, interface address ${nb.address}`);
+    ls.push(`    In the area 0 via interface ${nb.interface}`);
+    ls.push(`    Neighbor priority is ${nb.priority}, State is ${nb.state}, 6 state changes`);
+    ls.push(`    DR is ${o.routerId || '1.1.1.1'} BDR is ${nb.address}`);
+    ls.push('    Options is 0x12 in Hello (E-bit, L-bit)');
+    ls.push('    Options is 0x52 in DBD  (E-bit, L-bit, O-bit)');
+    ls.push('    LLS Options is 0x1 (LR)');
+    ls.push(`    Dead timer due in ${nb.deadTime}`);
+    ls.push('    Neighbor is up for 00:45:32');
+    ls.push('    Index 1/1/1, retransmission queue length 0, number of retransmission 1');
+    ls.push('    First 0x0(0)/0x0(0)/0x0(0) Next 0x0(0)/0x0(0)/0x0(0)');
+    ls.push('    Last retransmission scan length is 1, maximum is 1');
+    ls.push('    Last retransmission scan time is 0 msec, maximum is 0 msec');
+    ls.push('');
+  }
+  return ls;
+}
+
+function showIpEigrpTopology(state: DeviceState, allLinks: boolean): string[] {
+  if (!state.eigrp) return ['% EIGRP is not configured'];
+  const e = state.eigrp;
+  const routerId = Object.values(state.interfaces)
+    .find(i => i.id.startsWith('Loopback') && i.ipAddresses.length > 0)
+    ?.ipAddresses[0].address || '1.1.1.1';
+
+  const ls: string[] = [];
+  ls.push(`EIGRP-IPv4 Topology Table for AS(${e.asNumber})/ID(${routerId})`);
+  ls.push('Codes: P - Passive, A - Active, U - Update, Q - Query, R - Reply,');
+  ls.push('       r - reply Status, s - sia Status');
+  ls.push('');
+
+  if (e.neighbors.length > 0) {
+    const nb = e.neighbors[0];
+    ls.push('P 0.0.0.0/0, 1 successors, FD is 28160');
+    ls.push(`        via ${nb.address} (28160/2816), ${shortIfName(nb.interface)}`);
+    if (allLinks) {
+      ls.push('        via 10.10.10.254 (30720/28160), Vlan10');
+    }
+  }
+
+  const seen = new Set<string>();
+  for (const iface of Object.values(state.interfaces)) {
+    for (const ip of iface.ipAddresses) {
+      if (!ip.address || !ip.mask) continue;
+      const cidr = maskToCidr(ip.mask);
+      if (cidr === 32) continue;
+      const parts = ip.address.split('.').map(Number);
+      const mparts = ip.mask.split('.').map(Number);
+      const netParts = parts.map((p, idx) => p & mparts[idx]);
+      const prefix = `${netParts.join('.')}/${cidr}`;
+      if (seen.has(prefix)) continue;
+      seen.add(prefix);
+      const fd = prefix.startsWith('192.168') ? 2816 : 28160;
+      ls.push(`P ${prefix}, 1 successors, FD is ${fd}`);
+      ls.push(`        via Connected, ${shortIfName(iface.id)}`);
+      if (allLinks && !iface.id.startsWith('Loopback')) {
+        ls.push(`        via 192.168.1.254 (30720/28160), ${shortIfName(iface.id)}`);
+      }
+    }
+  }
+  return ls;
+}
+
+function showIpEigrpInterfaces(state: DeviceState, detail: boolean): string[] {
+  if (!state.eigrp) return ['% EIGRP is not configured'];
+  const e = state.eigrp;
+  const ls: string[] = [];
+  ls.push(`EIGRP-IPv4 Interfaces for AS(${e.asNumber})`);
+  ls.push('');
+  ls.push('                              Xmit Queue   PeerQ        Mean   Pacing Time   Multicast    Pending');
+  ls.push('Interface              Peers  Un/Reliable  Un/Reliable  SRTT   Un/Reliable   Flow Timer   Routes');
+
+  const ifacesWithIp = Object.values(state.interfaces).filter(i =>
+    i.ipAddresses.length > 0 && (i.id.startsWith('Vlan') || i.id.startsWith('Loopback'))
+  );
+
+  for (const iface of ifacesWithIp) {
+    const hasNeighbor = e.neighbors.some(n => n.interface === iface.id);
+    const peerCount = hasNeighbor ? 1 : 0;
+    const nb = hasNeighbor ? e.neighbors.find(n => n.interface === iface.id)! : null;
+    const srtt = nb ? nb.srtt : 0;
+    const flowTimer = peerCount > 0 ? 50 : 0;
+    const shortId = iface.id.replace('Vlan', 'Vl').replace('Loopback', 'Lo');
+    ls.push(`${padRight(shortId, 23)}${padLeft(String(peerCount), 5)}        0/0       0/0      ${padLeft(String(srtt), 3)}       0/${peerCount > 0 ? 1 : 0}           ${padLeft(String(flowTimer), 3)}             0`);
+    if (detail && nb) {
+      ls.push('  Hello-interval is 5, Hold-time is 15');
+      ls.push('  Split-horizon enabled');
+      ls.push('  Next xmit serial <none>');
+      ls.push('  Un/reliable mcasts: 0/2  Un/reliable ucasts: 0/3');
+      ls.push('  Mcast exceptions: 0  CR packets: 0  ACKs suppressed: 0');
+      ls.push('  Retransmissions sent: 1  Out-of-sequence rcvd: 0');
+      ls.push('  Topology-ids on interface - 0');
+      ls.push('  Authentication mode is not set');
+      ls.push('');
+    }
+  }
+  return ls;
+}
+
+function showIpEigrpTraffic(state: DeviceState): string[] {
+  if (!state.eigrp) return ['% EIGRP is not configured'];
+  const e = state.eigrp;
+  return [
+    `EIGRP-IPv4 Traffic Statistics for AS(${e.asNumber})`,
+    '  Hellos sent/received: 2847/2841',
+    '  Updates sent/received: 12/8',
+    '  Queries sent/received: 3/2',
+    '  Replies sent/received: 2/3',
+    '  Acks sent/received: 14/10',
+    '  SIA-Queries sent/received: 0/0',
+    '  SIA-Replies sent/received: 0/0',
+    '  Hello Process ID: 149',
+    '  PDM Process ID: 130',
+    '  Socket Queue: 0/10000/2/0 (current/max/highest/drops)',
+    '  Input Queue: 0/10000/2/0 (current/max/highest/drops)',
+  ];
+}
+
+function showIpBgpTable(state: DeviceState): string[] {
+  if (!state.bgp) return ['% BGP is not configured'];
+  const b = state.bgp;
+  const rid = b.routerId || '1.1.1.1';
+  const ls: string[] = [];
+  ls.push(`BGP table version is 12, local router ID is ${rid}`);
+  ls.push('Status codes: s suppressed, d damped, h history, * valid, > best, i - internal,');
+  ls.push('              r RIB-failure, S Stale, m multipath, b backup-path, f RT-Filter,');
+  ls.push('              x best-external, a additional-path, c RIB-compressed,');
+  ls.push('              t secondary path, L long-lived-stale,');
+  ls.push('Origin codes: i - IGP, e - EGP, ? - incomplete');
+  ls.push('RPKI validation codes: V valid, I invalid, N Not found');
+  ls.push('');
+  ls.push('     Network          Next Hop            Metric LocPrf Weight Path');
+
+  for (const nb of b.neighbors) {
+    if (nb.state === 'Established') {
+      ls.push(` *>  0.0.0.0          ${padRight(nb.address, 20)}    0             0 ${nb.remoteAs} i`);
+    }
+  }
+
+  const advertisedNets = new Set(b.networks.map(n => n.network));
+  for (const n of b.networks) {
+    const cidr = n.mask ? `/${maskToCidr(n.mask)}` : '';
+    ls.push(` *>  ${padRight(`${n.network}${cidr}`, 17)}${padRight('0.0.0.0', 20)}    0         32768 i`);
+  }
+
+  const connNets = [
+    { net: '10.10.10.0/24', base: '10.10.10.0', iface: 'Vlan10' },
+    { net: '10.20.20.0/24', base: '10.20.20.0', iface: 'Vlan20' },
+    { net: '10.30.30.0/24', base: '10.30.30.0', iface: 'Vlan30' },
+    { net: '192.168.1.0',   base: '192.168.1.0', iface: 'Vlan1' },
+  ];
+  for (const cn of connNets) {
+    if (!advertisedNets.has(cn.base) && !advertisedNets.has(cn.net) && state.interfaces[cn.iface]) {
+      ls.push(` *>  ${padRight(cn.net, 17)}${padRight('0.0.0.0', 20)}    0         32768 i`);
+    }
+  }
+  return ls;
+}
+
+function showIpBgpNeighborsDetail(state: DeviceState, ipFilter?: string): string[] {
+  if (!state.bgp) return ['% BGP is not configured'];
+  const b = state.bgp;
+  const localRid = b.routerId || '1.1.1.1';
+  const ls: string[] = [];
+
+  const neighbors = ipFilter
+    ? b.neighbors.filter(nb => nb.address === ipFilter)
+    : b.neighbors;
+
+  if (ipFilter && neighbors.length === 0) {
+    return [`% Neighbor ${ipFilter} not found`];
+  }
+
+  for (const nb of neighbors) {
+    const isEbgp = nb.remoteAs !== b.asNumber;
+    ls.push(`BGP neighbor is ${nb.address},  remote AS ${nb.remoteAs}, ${isEbgp ? 'external' : 'internal'} link`);
+    ls.push(`  BGP version 4, remote router ID ${nb.address}`);
+    ls.push(`  BGP state = ${nb.state}, up for ${nb.uptime}`);
+    ls.push('  Last read 00:00:23, last write 00:00:17, hold time is 180, keepalive interval is 60 seconds');
+    ls.push('  Neighbor sessions:');
+    ls.push('    1 active, is not multisession capable (disabled)');
+    ls.push('  Neighbor capabilities:');
+    ls.push('    Route refresh: advertised and received(new)');
+    ls.push('    Four-octets ASN Capability: advertised and received');
+    ls.push('    Address family IPv4 Unicast: advertised and received');
+    ls.push('    Enhanced Refresh Capability: advertised and received');
+    ls.push('    Multisession Capability:');
+    ls.push('    Stateful switchover support enabled: NO for session 1');
+    ls.push('  Message statistics:');
+    ls.push('    InQ depth is 0');
+    ls.push('    OutQ depth is 0');
+    ls.push('                         Sent       Rcvd');
+    ls.push('    Opens:                  1          1');
+    ls.push('    Notifications:          0          0');
+    ls.push('    Updates:                3          2');
+    ls.push('    Keepalives:            45         44');
+    ls.push('    Route Refresh:          0          0');
+    ls.push('    Total:                 49         47');
+    ls.push('  Default minimum time between advertisement runs is 30 seconds');
+    ls.push('  For address family: IPv4 Unicast');
+    ls.push('    BGP table version 12, neighbor version 12/0');
+    ls.push('    Output queue size : 0');
+    ls.push('    Index 1, Advertise bit 0');
+    ls.push('    1 update-group member');
+    ls.push('    Slow-peer detection is disabled');
+    ls.push('    Slow-peer split-update-group dynamic is disabled');
+    ls.push('                                 Sent       Rcvd');
+    ls.push('    Prefix activity:               ----       ----');
+    ls.push(`      Prefixes Current:               5          ${nb.prefixesReceived} (Consumes ${nb.prefixesReceived * 80} bytes)`);
+    ls.push(`      Prefixes Total:                 5          ${nb.prefixesReceived}`);
+    ls.push('      Implicit Withdraw:              0          0');
+    ls.push('      Explicit Withdraw:              0          0');
+    ls.push(`      Used as bestpath:             n/a          ${nb.prefixesReceived}`);
+    ls.push('      Used as multipath:            n/a          0');
+    ls.push('      Used as secondary:            n/a          0');
+    const localIface = Object.values(state.interfaces).find(i =>
+      i.ipAddresses.some(a => {
+        const parts = a.address.split('.').map(Number);
+        const mparts = a.mask.split('.').map(Number);
+        const nbParts = nb.address.split('.').map(Number);
+        return parts.every((p, idx) => (p & mparts[idx]) === (nbParts[idx] & mparts[idx]));
+      })
+    );
+    const localIp = localIface?.ipAddresses[0]?.address || localRid;
+    ls.push(`  Local host: ${localIp}, Local port: 179`);
+    ls.push(`  Foreign host: ${nb.address}, Foreign port: 50234`);
+    ls.push(`  Connection established ${nb.uptime} ago`);
+    ls.push('');
+  }
+  return ls;
+}
+
+function showIpBgpNeighborRoutes(
+  state: DeviceState,
+  ip: string,
+  routeType: 'advertised-routes' | 'received-routes' | 'routes'
+): string[] {
+  if (!state.bgp) return ['% BGP is not configured'];
+  const b = state.bgp;
+  const rid = b.routerId || '1.1.1.1';
+  const nb = b.neighbors.find(n => n.address === ip);
+  if (!nb) return [`% Neighbor ${ip} not found`];
+
+  const ls: string[] = [];
+  ls.push(`BGP table version is 12, local router ID is ${rid}`);
+  ls.push('Status codes: s suppressed, d damped, h history, * valid, > best, i - internal,');
+  ls.push('              r RIB-failure, S Stale, m multipath, b backup-path, f RT-Filter,');
+  ls.push('              x best-external, a additional-path, c RIB-compressed,');
+  ls.push('              t secondary path, L long-lived-stale,');
+  ls.push('Origin codes: i - IGP, e - EGP, ? - incomplete');
+  ls.push('');
+  ls.push('     Network          Next Hop            Metric LocPrf Weight Path');
+
+  if (routeType === 'advertised-routes') {
+    const localNets: { net: string; nh: string }[] = [];
+    for (const n of b.networks) {
+      const cidr = n.mask ? `/${maskToCidr(n.mask)}` : '';
+      localNets.push({ net: `${n.network}${cidr}`, nh: rid });
+    }
+    const connDefaults = [
+      { net: '10.10.10.0/24', iface: 'Vlan10' },
+      { net: '10.20.20.0/24', iface: 'Vlan20' },
+      { net: '192.168.1.0',   iface: 'Vlan1' },
+    ];
+    const advNets = new Set(localNets.map(n => n.net));
+    for (const cd of connDefaults) {
+      const base = cd.net.split('/')[0];
+      if (!advNets.has(base) && !advNets.has(cd.net) && state.interfaces[cd.iface]) {
+        localNets.push({ net: cd.net, nh: rid });
+      }
+    }
+    const seen = new Set<string>();
+    let count = 0;
+    for (const n of localNets) {
+      if (seen.has(n.net)) continue;
+      seen.add(n.net);
+      ls.push(` *>  ${padRight(n.net, 17)}${padRight(n.nh, 20)}    0         32768 i`);
+      count++;
+    }
+    ls.push('');
+    ls.push(`Total number of prefixes ${count}`);
+  } else {
+    ls.push(` *>  0.0.0.0          ${padRight(nb.address, 20)}    0             0 ${nb.remoteAs} i`);
+    if (nb.prefixesReceived > 1) {
+      ls.push(` *>  10.0.0.0/8       ${padRight(nb.address, 20)}    0             0 ${nb.remoteAs} i`);
+    }
+    ls.push('');
+    ls.push(`Total number of prefixes ${nb.prefixesReceived}`);
+  }
+  return ls;
+}
+
+function showIpBgpSummaryFull(state: DeviceState): string[] {
+  if (!state.bgp) return ['% BGP is not configured'];
+  const b = state.bgp;
+  const rid = b.routerId || '1.1.1.1';
+  const networkCount = b.networks.length + 4;
+  const ls: string[] = [];
+  ls.push(`BGP router identifier ${rid}, local AS number ${b.asNumber}`);
+  ls.push('BGP table version is 12, main routing table version 12');
+  ls.push(`${networkCount} network entries using ${networkCount * 1288} bytes of memory`);
+  ls.push(`${networkCount} path entries using ${networkCount * 392} bytes of memory`);
+  ls.push('4/2 BGP path/bestpath attribute entries using 576 bytes of memory');
+  ls.push('1 BGP AS-PATH entries using 24 bytes of memory');
+  ls.push('0 BGP route-map cache entries using 0 bytes of memory');
+  ls.push('0 BGP filter-list cache entries using 0 bytes of memory');
+  ls.push('BGP using 12592 total bytes of memory');
+  ls.push(`BGP activity ${networkCount * 2}/${networkCount} prefixes, ${networkCount * 3}/${networkCount} paths, scan interval 60 secs`);
+  ls.push('');
+  ls.push('Neighbor        V           AS MsgRcvd MsgSent   TblVer  InQ OutQ Up/Down  State/PfxRcd');
+  for (const nb of b.neighbors) {
+    const stateOrPfx = nb.state === 'Established'
+      ? String(nb.prefixesReceived)
+      : nb.state;
+    ls.push(`${padRight(nb.address, 16)}4 ${padLeft(String(nb.remoteAs), 12)}      47      49       12    0    0 ${padRight(nb.uptime, 9)}${stateOrPfx}`);
+  }
+  return ls;
+}
+
 function showEnvironment(state: DeviceState): string[] {
   return [
     `${state.hostname} SYSTEM ENVIRONMENT`,
@@ -3461,18 +4000,62 @@ export const showHandler: CommandHandler = (args, state, _raw, _negated) => {
     if (sub2.startsWith('pr') || sub2 === 'protocols') return makeResult(showIpProtocols(state));
     if (sub2.startsWith('os') || sub2 === 'ospf') {
       const sub3 = (mainArgs[2] || '').toLowerCase();
-      if (sub3.startsWith('nei') || sub3 === 'neighbor') return makeResult(showIpOspfNeighbor(state));
-      if (sub3.startsWith('dat') || sub3 === 'database') return makeResult(showIpOspfNeighbor(state));
-      if (sub3.startsWith('int') || sub3 === 'interface') return makeResult(showIpOspfNeighbor(state));
-      // no sub3 = show ip ospf (full detail)
+      const sub4 = (mainArgs[3] || '').toLowerCase();
+      if (sub3.startsWith('nei') || sub3 === 'neighbor') {
+        if (sub4.startsWith('det') || sub4 === 'detail') return makeResult(showIpOspfNeighborDetail(state));
+        return makeResult(showIpOspfNeighbor(state));
+      }
+      if (sub3.startsWith('dat') || sub3 === 'database') {
+        // sub4: router, network, summary, external
+        if (sub4.startsWith('rou') || sub4 === 'router') return makeResult(showIpOspfDatabase(state, 'router'));
+        if (sub4.startsWith('net') || sub4 === 'network') return makeResult(showIpOspfDatabase(state, 'network'));
+        if (sub4.startsWith('sum') || sub4 === 'summary') return makeResult(showIpOspfDatabase(state, 'summary'));
+        if (sub4.startsWith('ext') || sub4 === 'external') return makeResult(showIpOspfDatabase(state, 'external'));
+        return makeResult(showIpOspfDatabase(state, 'all'));
+      }
+      if (sub3.startsWith('int') || sub3 === 'interface') {
+        if (sub4.startsWith('bri') || sub4 === 'brief') return makeResult(showIpOspfInterface(state, true));
+        if (!sub4) return makeResult(showIpOspfInterface(state, false));
+        const ifId = resolveInterface(mainArgs.slice(3).join(''), state);
+        return makeResult(showIpOspfInterface(state, false, ifId || sub4));
+      }
       if (!sub3) return makeResult(showIpOspfDetail(state));
       return makeResult(showIpOspfDetail(state));
     }
-    if (sub2.startsWith('ei') || sub2 === 'eigrp') return makeResult(showIpEigrpNeighbors(state));
+    if (sub2.startsWith('ei') || sub2 === 'eigrp') {
+      const sub3 = (mainArgs[2] || '').toLowerCase();
+      const sub4 = (mainArgs[3] || '').toLowerCase();
+      if (sub3.startsWith('nei') || sub3 === 'neighbors') return makeResult(showIpEigrpNeighbors(state));
+      if (sub3.startsWith('top') || sub3 === 'topology') {
+        const allLinks = sub4 === 'all-links' || mainArgs.some(a => a === 'all-links');
+        return makeResult(showIpEigrpTopology(state, allLinks));
+      }
+      if (sub3.startsWith('int') || sub3 === 'interfaces') {
+        const detail = sub4.startsWith('det') || sub4 === 'detail';
+        return makeResult(showIpEigrpInterfaces(state, detail));
+      }
+      if (sub3.startsWith('tra') || sub3 === 'traffic') return makeResult(showIpEigrpTraffic(state));
+      return makeResult(showIpEigrpNeighbors(state));
+    }
     if (sub2.startsWith('bg') || sub2 === 'bgp') {
       const sub3 = (mainArgs[2] || '').toLowerCase();
-      if (sub3.startsWith('sum') || sub3 === 'summary') return makeResult(showIpBgpSummary(state));
-      return makeResult(showIpBgpSummary(state));
+      const sub4 = (mainArgs[3] || '').toLowerCase();
+      const sub5 = (mainArgs[4] || '').toLowerCase();
+      if (sub3.startsWith('sum') || sub3 === 'summary') return makeResult(showIpBgpSummaryFull(state));
+      if (sub3.startsWith('nei') || sub3 === 'neighbors') {
+        // sub4 might be an IP address or empty
+        const isIp = /^\d+\.\d+\.\d+\.\d+$/.test(sub4);
+        if (isIp) {
+          const routeTypeArg = sub5 || (mainArgs[5] || '').toLowerCase();
+          if (routeTypeArg === 'advertised-routes') return makeResult(showIpBgpNeighborRoutes(state, sub4, 'advertised-routes'));
+          if (routeTypeArg === 'received-routes') return makeResult(showIpBgpNeighborRoutes(state, sub4, 'received-routes'));
+          if (routeTypeArg === 'routes') return makeResult(showIpBgpNeighborRoutes(state, sub4, 'routes'));
+          return makeResult(showIpBgpNeighborsDetail(state, sub4));
+        }
+        return makeResult(showIpBgpNeighborsDetail(state));
+      }
+      if (!sub3 || sub3 === '') return makeResult(showIpBgpTable(state));
+      return makeResult(showIpBgpTable(state));
     }
     if (sub2.startsWith('acc') || sub2 === 'access-lists') return makeResult(showIpAccessLists(state));
     if (sub2 === 'dhcp') {
