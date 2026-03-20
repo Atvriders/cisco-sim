@@ -33,8 +33,10 @@ export const routerConfigHandler: CommandHandler = (args, state, _raw, negated) 
     if (cmd === 'network') {
       const network = args[1];
       const wildcard = args[2];
+      const areaKw = (args[3] || '').toLowerCase();
       const area = parseInt(args[4] || '0');
       if (!network || !wildcard) return { output: [out('% Incomplete command.', 'error')] };
+      if (areaKw !== 'area') return { output: [out('% Incomplete command.', 'error')] };
       if (negated) {
         return {
           output: [],

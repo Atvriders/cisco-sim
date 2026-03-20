@@ -30,7 +30,7 @@ export type CliMode =
 
 export type ModeContext =
   | { type: 'none' }
-  | { type: 'interface'; interfaceId: string }
+  | { type: 'interface'; interfaceId: string; interfaceIds?: string[] }
   | { type: 'vlan'; vlanId: number }
   | { type: 'line'; lineType: 'console' | 'vty' | 'aux'; start: number; end: number }
   | { type: 'router-ospf'; processId: number }

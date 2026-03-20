@@ -61,6 +61,26 @@ function caretLine(input: string, position: number): string {
   return ' '.repeat(position) + '^';
 }
 
+const SHOW_SUBCMDS_HELP = [
+  'arp', 'cdp', 'clock', 'environment', 'etherchannel', 'flash', 'history',
+  'interfaces', 'ip', 'logging', 'mac', 'memory', 'ntp', 'port-security',
+  'privilege', 'processes', 'running-config', 'sessions', 'spanning-tree',
+  'startup-config', 'terminal', 'users', 'version', 'vlan',
+];
+const SHOW_IP_SUBCMDS_HELP = [
+  'access-lists', 'bgp', 'dhcp', 'eigrp', 'interface', 'nat', 'ospf',
+  'protocols', 'route', 'ssh',
+];
+const SHOW_IP_INTERFACE_SUBCMDS_HELP = ['brief'];
+const SHOW_IP_OSPF_SUBCMDS_HELP = ['neighbor', 'database', 'interface'];
+const SHOW_IP_BGP_SUBCMDS_HELP = ['summary', 'neighbors'];
+const SHOW_IP_DHCP_SUBCMDS_HELP = ['binding', 'conflict', 'pool'];
+
+function matchPrefixLocal(input: string, candidates: string[]): string[] {
+  const lower = input.toLowerCase();
+  return candidates.filter(c => c.toLowerCase().startsWith(lower));
+}
+
 function getHelp(input: string, state: DeviceState): CommandResult {
   const trimmed = input.replace(/\?$/, '').trimStart();
   const cmds = getCmdsForMode(state.mode);
@@ -76,22 +96,102 @@ function getHelp(input: string, state: DeviceState): CommandResult {
   }
 
   const tokens = tokenize(trimmed);
-  const last = tokens[tokens.length - 1] || '';
   const endsWithSpace = trimmed.endsWith(' ');
 
-  if (!endsWithSpace) {
-    const matches = cmds.filter(c => c.toLowerCase().startsWith(last.toLowerCase()));
+  // Helper to render a list of candidates as help output
+  function renderList(candidates: string[]): CommandResult {
     lines.push(out(''));
-    for (const m of matches) {
-      lines.push(out(`  ${m}`, 'info'));
-    }
-    if (matches.length === 0) lines.push(out('  % No commands found', 'error'));
+    for (const c of candidates) lines.push(out(`  ${c}`, 'info'));
+    if (candidates.length === 0) lines.push(out('  % No commands found', 'error'));
     lines.push(out(''));
-  } else {
-    lines.push(out('  <cr>', 'info'));
+    return { output: lines };
   }
 
-  return { output: lines };
+  // Resolve the first token to a full command name
+  const first = tokens[0] || '';
+  const firstResolved = (() => {
+    const m = cmds.filter(c => c.toLowerCase().startsWith(first.toLowerCase()));
+    if (m.length === 1) return m[0].toLowerCase();
+    if (m.find(c => c.toLowerCase() === first.toLowerCase())) return first.toLowerCase();
+    return first.toLowerCase();
+  })();
+
+  // ── show ? / show <sub> ? ────────────────────────────────────────────────
+  if (firstResolved === 'show') {
+    if (tokens.length === 1 && endsWithSpace) {
+      // "show " -> list show subcommands
+      return renderList(SHOW_SUBCMDS_HELP);
+    }
+
+    const sub = (tokens[1] || '').toLowerCase();
+
+    if (tokens.length === 2 && !endsWithSpace) {
+      // "show ip" -> show completions for 'ip' prefix
+      return renderList(matchPrefixLocal(sub, SHOW_SUBCMDS_HELP));
+    }
+
+    // Resolve sub
+    const subResolved = (() => {
+      const m = matchPrefixLocal(sub, SHOW_SUBCMDS_HELP);
+      if (m.length === 1) return m[0];
+      if (m.find(c => c === sub)) return sub;
+      return sub;
+    })();
+
+    if (subResolved === 'ip') {
+      if (tokens.length === 2 && endsWithSpace) {
+        return renderList(SHOW_IP_SUBCMDS_HELP);
+      }
+      const ipSub = (tokens[2] || '').toLowerCase();
+      if (tokens.length === 3 && !endsWithSpace) {
+        return renderList(matchPrefixLocal(ipSub, SHOW_IP_SUBCMDS_HELP));
+      }
+      const ipSubResolved = (() => {
+        const m = matchPrefixLocal(ipSub, SHOW_IP_SUBCMDS_HELP);
+        if (m.length === 1) return m[0];
+        return ipSub;
+      })();
+      if (ipSubResolved === 'interface') {
+        if (tokens.length === 3 && endsWithSpace) return renderList(SHOW_IP_INTERFACE_SUBCMDS_HELP);
+        if (tokens.length === 4 && !endsWithSpace) return renderList(matchPrefixLocal(tokens[3], SHOW_IP_INTERFACE_SUBCMDS_HELP));
+      }
+      if (ipSubResolved === 'ospf') {
+        if (tokens.length === 3 && endsWithSpace) return renderList(SHOW_IP_OSPF_SUBCMDS_HELP);
+        if (tokens.length === 4 && !endsWithSpace) return renderList(matchPrefixLocal(tokens[3], SHOW_IP_OSPF_SUBCMDS_HELP));
+      }
+      if (ipSubResolved === 'bgp') {
+        if (tokens.length === 3 && endsWithSpace) return renderList(SHOW_IP_BGP_SUBCMDS_HELP);
+        if (tokens.length === 4 && !endsWithSpace) return renderList(matchPrefixLocal(tokens[3], SHOW_IP_BGP_SUBCMDS_HELP));
+      }
+      if (ipSubResolved === 'dhcp') {
+        if (tokens.length === 3 && endsWithSpace) return renderList(SHOW_IP_DHCP_SUBCMDS_HELP);
+        if (tokens.length === 4 && !endsWithSpace) return renderList(matchPrefixLocal(tokens[3], SHOW_IP_DHCP_SUBCMDS_HELP));
+      }
+      if (tokens.length >= 3 && endsWithSpace) return renderList(['<cr>']);
+    }
+
+    if (tokens.length >= 2 && endsWithSpace) {
+      return renderList(['<cr>']);
+    }
+  }
+
+  // ── general: partial first token ─────────────────────────────────────────
+  if (tokens.length === 1 && !endsWithSpace) {
+    const matches = cmds.filter(c => c.toLowerCase().startsWith(first.toLowerCase()));
+    return renderList(matches);
+  }
+
+  // ── trailing space on any other command ───────────────────────────────────
+  if (endsWithSpace) {
+    lines.push(out('  <cr>', 'info'));
+    lines.push(out(''));
+    return { output: lines };
+  }
+
+  // ── partial last token ────────────────────────────────────────────────────
+  const last = tokens[tokens.length - 1] || '';
+  const matches = cmds.filter(c => c.toLowerCase().startsWith(last.toLowerCase()));
+  return renderList(matches);
 }
 
 export function dispatch(input: string, state: DeviceState): CommandResult {
@@ -195,9 +295,6 @@ export function dispatch(input: string, state: DeviceState): CommandResult {
         if (!inner) return { output: [out('% Incomplete command.', 'error')] };
         return ifConfigHandler(tokenize(inner), state, inner, true);
       }
-      if (cmd === 'do') {
-        return showHandler(restArgs, state, restArgs.join(' '), false);
-      }
       return ifConfigHandler(cmdArgs, state, trimmed, negated);
     }
 
@@ -214,9 +311,6 @@ export function dispatch(input: string, state: DeviceState): CommandResult {
         const inner = restArgs.join(' ');
         return lineConfigHandler(tokenize(inner), state, inner, true);
       }
-      if (cmd === 'do') {
-        return showHandler(restArgs, state, restArgs.join(' '), false);
-      }
       return lineConfigHandler(cmdArgs, state, trimmed, negated);
     }
 
@@ -226,9 +320,6 @@ export function dispatch(input: string, state: DeviceState): CommandResult {
       if (cmd === 'no') {
         const inner = restArgs.join(' ');
         return routerConfigHandler(tokenize(inner), state, inner, true);
-      }
-      if (cmd === 'do') {
-        return showHandler(restArgs, state, restArgs.join(' '), false);
       }
       return routerConfigHandler(cmdArgs, state, trimmed, negated);
     }

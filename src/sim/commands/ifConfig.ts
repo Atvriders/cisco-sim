@@ -87,13 +87,20 @@ export const ifConfigHandler: CommandHandler = (args, state, _raw, negated) => {
     return { output: [out(`% Interface ${ifId} not found`, 'error')] };
   }
 
-  const updateIface = (updates: Partial<Interface>): ReturnType<typeof ifConfigHandler> => ({
-    output: [],
-    newState: {
-      interfaces: { ...state.interfaces, [ifId]: { ...iface, ...updates } },
-      unsavedChanges: true
+  const updateIface = (updates: Partial<Interface>): ReturnType<typeof ifConfigHandler> => {
+    const rangeIds = ctx.type === 'interface' && ctx.interfaceIds ? ctx.interfaceIds : [ifId];
+    const updatedInterfaces = { ...state.interfaces };
+    for (const id of rangeIds) {
+      const target = updatedInterfaces[id];
+      if (target) {
+        updatedInterfaces[id] = { ...target, ...updates };
+      }
     }
-  });
+    return {
+      output: [],
+      newState: { interfaces: updatedInterfaces, unsavedChanges: true }
+    };
+  };
 
   if (cmd === 'description') {
     if (negated) return updateIface({ description: '' });
@@ -112,7 +119,7 @@ export const ifConfigHandler: CommandHandler = (args, state, _raw, negated) => {
       const secondary = args[4]?.toLowerCase() === 'secondary';
       if (!ip || !mask) return { output: [out('% Incomplete command.', 'error')] };
       const newAddrs = secondary
-        ? [...iface.ipAddresses.filter(a => !a.secondary), { address: ip, mask, secondary: true }]
+        ? [...iface.ipAddresses.filter(a => a.address !== ip), { address: ip, mask, secondary: true }]
         : [{ address: ip, mask }, ...iface.ipAddresses.filter(a => a.secondary)];
       return updateIface({ ipAddresses: newAddrs });
     }
@@ -266,12 +273,21 @@ export const ifConfigHandler: CommandHandler = (args, state, _raw, negated) => {
       } else {
         newLineState = 'notconnect';
       }
-      return updateIface({ adminState: 'up', lineState: newLineState });
+      const result = updateIface({ adminState: 'up', lineState: newLineState });
+      if (newLineState === 'up') {
+        result.output = [
+          out(`%LINK-3-UPDOWN: Interface ${iface.id}, changed state to up`, 'system'),
+          out(`%LINEPROTO-5-UPDOWN: Line protocol on Interface ${iface.id}, changed state to up`, 'system'),
+        ];
+      }
+      return result;
     }
-    return updateIface({
-      adminState: 'down',
-      lineState: 'down'
-    });
+    const result = updateIface({ adminState: 'down', lineState: 'down' });
+    result.output = [
+      out(`%LINK-5-CHANGED: Interface ${iface.id}, changed state to administratively down`, 'system'),
+      out(`%LINEPROTO-5-UPDOWN: Line protocol on Interface ${iface.id}, changed state to down`, 'system'),
+    ];
+    return result;
   }
 
   // Legacy path: explicit "no shutdown" if args[0]==='no' (shouldn't occur with current dispatcher but kept for safety)
@@ -285,10 +301,14 @@ export const ifConfigHandler: CommandHandler = (args, state, _raw, negated) => {
     } else {
       newLineState = 'notconnect';
     }
-    return updateIface({
-      adminState: 'up',
-      lineState: newLineState
-    });
+    const result = updateIface({ adminState: 'up', lineState: newLineState });
+    if (newLineState === 'up') {
+      result.output = [
+        out(`%LINK-3-UPDOWN: Interface ${iface.id}, changed state to up`, 'system'),
+        out(`%LINEPROTO-5-UPDOWN: Line protocol on Interface ${iface.id}, changed state to up`, 'system'),
+      ];
+    }
+    return result;
   }
 
   if (cmd === 'duplex') {

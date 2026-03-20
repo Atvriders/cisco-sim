@@ -10,26 +10,27 @@ const MODE_CMDS: Record<string, string[]> = {
   'priv-exec': [
     'enable', 'disable', 'exit', 'logout', 'ping', 'traceroute', 'show',
     'configure', 'copy', 'write', 'reload', 'erase', 'debug', 'undebug',
-    'clear', 'clock', 'ssh', 'telnet', 'terminal', 'do',
+    'clear', 'clock', 'ssh', 'telnet', 'terminal', 'do', 'dir',
   ],
   'global-config': [
-    'hostname', 'enable', 'service', 'banner', 'ip', 'no', 'interface', 'vlan',
+    'hostname', 'enable', 'service', 'banner', 'ip', 'ipv6', 'no', 'interface', 'vlan',
     'line', 'router', 'username', 'access-list', 'spanning-tree', 'crypto',
-    'ntp', 'logging', 'cdp', 'do', 'exit', 'end',
+    'ntp', 'logging', 'cdp', 'lldp', 'snmp-server', 'clock', 'default',
+    'do', 'exit', 'end',
   ],
   'if-config': [
-    'description', 'ip', 'no', 'shutdown', 'duplex', 'speed', 'mtu',
+    'description', 'ip', 'ipv6', 'no', 'shutdown', 'duplex', 'speed', 'mtu',
     'switchport', 'spanning-tree', 'channel-group', 'port-security',
-    'storm-control', 'exit', 'end', 'do',
+    'storm-control', 'lldp', 'exit', 'end', 'do',
   ],
-  'vlan-config': ['name', 'state', 'exit', 'end'],
+  'vlan-config': ['name', 'state', 'no', 'exit', 'end'],
   'line-config': [
     'login', 'password', 'exec-timeout', 'transport', 'logging',
-    'privilege', 'exit', 'end',
+    'privilege', 'no', 'exit', 'end', 'do',
   ],
   'router-ospf': [
-    'network', 'router-id', 'passive-interface', 'redistribute', 'neighbor',
-    'exit', 'end', 'no', 'do',
+    'network', 'router-id', 'passive-interface', 'redistribute', 'default-information',
+    'neighbor', 'exit', 'end', 'no', 'do',
   ],
   'router-eigrp': [
     'network', 'passive-interface', 'redistribute', 'neighbor',
@@ -37,7 +38,7 @@ const MODE_CMDS: Record<string, string[]> = {
   ],
   'router-bgp': [
     'network', 'router-id', 'passive-interface', 'redistribute', 'neighbor',
-    'exit', 'end', 'no', 'do',
+    'bgp', 'exit', 'end', 'no', 'do',
   ],
 };
 
@@ -687,6 +688,34 @@ export function tabComplete(
         return completeInterface(tokens[1], state, 'passive-interface ') ||
           completeInList(tokens[1], ['default', ...ifIds], 'passive-interface ');
       }
+    }
+  }
+
+  // ── 'no' prefix completion ─────────────────────────────────────────────────
+  // When the first token is 'no', complete the second token against mode commands
+  // and then delegate to the same sub-tree logic as if the negated command were typed directly.
+  if (resolvedFirst === 'no') {
+    if (tokens.length === 1 && endsWithSpace) {
+      // Show all negatable commands (mode commands minus navigation commands)
+      const nonNegatable = new Set(['no', 'exit', 'end', 'do']);
+      const negatableCmds = modeCmds.filter(c => !nonNegatable.has(c));
+      return { newInput: input, displayLines: negatableCmds };
+    }
+    if (tokens.length === 2 && !endsWithSpace) {
+      const nonNegatable = new Set(['no', 'exit', 'end', 'do']);
+      const negatableCmds = modeCmds.filter(c => !nonNegatable.has(c));
+      return completeInList(tokens[1], negatableCmds, 'no ');
+    }
+    // For deeper 'no <cmd> ...' completions, synthesise a virtual input without 'no'
+    // and re-run tab completion against a fake leading token equal to the negated command.
+    if (tokens.length >= 2 && (endsWithSpace || tokens.length >= 3)) {
+      const innerInput = tokens.slice(1).join(' ') + (endsWithSpace ? ' ' : '');
+      const result = tabComplete(innerInput, state);
+      // Rewrite newInput to include 'no ' prefix
+      const rewritten = result.newInput.length > 0
+        ? 'no ' + result.newInput
+        : input;
+      return { newInput: rewritten, displayLines: result.displayLines };
     }
   }
 

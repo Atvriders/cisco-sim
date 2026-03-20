@@ -46,7 +46,7 @@ function pingOutput(ip: string, state: DeviceState): TerminalLine[] {
   // Loopback / own IP always reachable
   if (ip.startsWith('127.') || isOwnIp(ip, state)) {
     ls.push(out('!!!!!'));
-    ls.push(out('Success rate is 100 percent (5/5), round-trip min/avg/max = 1/1/1 ms'));
+    ls.push(out('Success rate is 100 percent (5/5), round-trip min/avg/max = 1/1/2 ms'));
     ls.push(out(''));
     return ls;
   }
@@ -98,7 +98,7 @@ function tracerouteOutput(ip: string, state: DeviceState): TerminalLine[] {
   if (!route) {
     // Unreachable — 5 rows of * * *
     for (let i = 1; i <= 5; i++) {
-      ls.push(out(`  ${i}  *  *  *`));
+      ls.push(out(`  ${i}  * * *`));
     }
     ls.push(out(''));
     return ls;
@@ -110,10 +110,10 @@ function tracerouteOutput(ip: string, state: DeviceState): TerminalLine[] {
   } else {
     // Via next-hop — show next-hop as hop 1 then unknown hops
     ls.push(out(`  1 ${route.nextHop} 4 msec 4 msec 4 msec`));
-    ls.push(out(`  2  *  *  *`));
-    ls.push(out(`  3  *  *  *`));
-    ls.push(out(`  4  *  *  *`));
-    ls.push(out(`  5  *  *  *`));
+    ls.push(out(`  2  * * *`));
+    ls.push(out(`  3  * * *`));
+    ls.push(out(`  4  * * *`));
+    ls.push(out(`  5  * * *`));
   }
 
   ls.push(out(''));

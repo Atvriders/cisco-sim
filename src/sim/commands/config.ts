@@ -487,12 +487,44 @@ export const configHandler: CommandHandler = (args, state, raw, negated) => {
     }
     const rangePart = (args[1] || '').toLowerCase();
     if (rangePart === 'range') {
-      const rangeStr = args.slice(2).join('');
-      const ifId = resolveIfFull(rangeStr.split(',')[0]);
+      // Parse interface range, e.g. "fa0/1 - 10", "fa0/1 - fa0/10", "fa0/1,fa0/3 - 5"
+      // Rejoin the remaining args to reconstruct the range string
+      const rangeRaw = args.slice(2).join(' ');
+      const expandedIds: string[] = [];
+
+      // Split by comma, then handle each segment
+      for (const segment of rangeRaw.split(',')) {
+        const trimmed = segment.trim();
+        // Check for "fa0/1 - 10" or "fa0/1 - fa0/10" pattern
+        const dashMatch = trimmed.match(/^([a-z]+(?:[0-9]+\/[0-9]+)?)\s*-\s*([a-z]*[0-9]+(?:\/[0-9]+)?)$/i);
+        if (dashMatch) {
+          const startRaw = dashMatch[1].trim();
+          const endRaw = dashMatch[2].trim();
+          const startId = resolveIfFull(startRaw);
+          // Extract prefix and numbers from start interface
+          const startNumMatch = startId.match(/^([A-Za-z]+(?:[0-9]+\/)?)([0-9]+)$/);
+          if (startNumMatch) {
+            const prefix = startNumMatch[1]; // e.g. "FastEthernet0/"
+            const startNum = parseInt(startNumMatch[2]);
+            // End could be just a number or full interface
+            const endNumMatch = endRaw.match(/^[0-9]+$/);
+            const endNum = endNumMatch ? parseInt(endRaw) : parseInt(resolveIfFull(endRaw).match(/([0-9]+)$/)?.[1] || '0');
+            for (let n = startNum; n <= endNum; n++) {
+              expandedIds.push(`${prefix}${n}`);
+            }
+          } else {
+            expandedIds.push(startId);
+          }
+        } else {
+          expandedIds.push(resolveIfFull(trimmed));
+        }
+      }
+
+      const firstId = expandedIds[0] || resolveIfFull(args[2] || '');
       return {
         output: [],
         newMode: 'if-config',
-        newContext: { type: 'interface', interfaceId: ifId }
+        newContext: { type: 'interface', interfaceId: firstId, interfaceIds: expandedIds.length > 1 ? expandedIds : undefined }
       };
     }
     const ifStr = args.slice(1).join('');
@@ -836,6 +868,9 @@ export const configHandler: CommandHandler = (args, state, raw, negated) => {
           return { output: [], newState: { spanningTree: newStp, unsavedChanges: true } };
         }
         const pri = parseInt(args[4] || '32768');
+        if (isNaN(pri) || pri % 4096 !== 0 || pri < 0 || pri > 61440) {
+          return { output: [out('% Bridge Priority must be in increments of 4096', 'error')] };
+        }
         if (newStp[vid]) newStp[vid] = { ...newStp[vid], localBridgePriority: pri + vid };
         return { output: [], newState: { spanningTree: newStp, unsavedChanges: true } };
       }
