@@ -161,6 +161,17 @@ export function reducer(state: SimState, action: SimAction): SimState {
             newDeviceState = { ...session.deviceState.startupConfig as DeviceState, startupConfig: session.deviceState.startupConfig };
           }
           resultLines = resultLines.concat([out('[OK]', 'success')]);
+        } else if (pendingType === 'reload-confirm') {
+          // Trigger reload: go back to booting state
+          const newSessions2 = state.sessions.map(s => s.id === state.activeSessionId ? {
+            ...s,
+            lines: [...s.lines, out(input, 'input'), out('', 'system')],
+            pendingInput: undefined,
+            pendingCommand: undefined,
+            booted: false,
+            deviceState: createInitialState(),
+          } : s);
+          return { ...state, sessions: newSessions2, booting: true, bootLineIndex: 0, currentInput: '' };
         }
 
         const prompt = buildPrompt(newDeviceState);

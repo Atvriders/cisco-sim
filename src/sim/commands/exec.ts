@@ -122,12 +122,16 @@ export const execHandler: CommandHandler = (args, state, raw, _negated) => {
     return { output: [] };
   }
 
-  if (cmd === 'configure' || (cmd === 'conf' && (args[1] || '').toLowerCase().startsWith('t'))) {
+  if (cmd === 'configure') {
     if (state.mode !== 'priv-exec') {
       return { output: [out('% Command not available in this mode', 'error')] };
     }
+    const sub = (args[1] || '').toLowerCase();
+    if (sub && !sub.startsWith('t') && !sub.startsWith('term')) {
+      return { output: [out('% Invalid input detected at \'^\' marker.', 'error')] };
+    }
     return {
-      output: [out('Enter configuration commands, one per line.  End with CNTL/Z.', 'system')],
+      output: [out('Enter configuration commands, one per line.  End with CNTL/Z.')],
       newMode: 'global-config',
       newContext: { type: 'none' }
     };
@@ -187,7 +191,7 @@ export const execHandler: CommandHandler = (args, state, raw, _negated) => {
 
   if (cmd === 'write') {
     const sub = (args[1] || '').toLowerCase();
-    if (sub.startsWith('mem') || sub === '') {
+    if (!sub || sub.startsWith('mem')) {
       const newState: Partial<DeviceState> = {
         unsavedChanges: false,
         startupConfig: { ...state }
@@ -199,7 +203,7 @@ export const execHandler: CommandHandler = (args, state, raw, _negated) => {
     }
     if (sub === 'erase') {
       return {
-        output: [out('Erasing the nvram filesystem will remove all configuration files! Continue? [confirm]'), out('[OK]', 'success')],
+        output: [out('Erasing the nvram filesystem will remove all configuration files! Continue? [confirm]'), out(''), out('[OK]', 'success')],
         newState: { startupConfig: undefined }
       };
     }
@@ -243,11 +247,10 @@ export const execHandler: CommandHandler = (args, state, raw, _negated) => {
   if (cmd === 'reload') {
     return {
       output: [
-        out('Proceed with reload? [confirm]', 'system'),
-        out(''),
-        out('System Bootstrap, Version 15.2(7r)E2', 'system'),
-        out('Reloading...', 'system'),
-      ]
+        out('Proceed with reload? [confirm]'),
+      ],
+      pendingInput: 'reload-confirm',
+      pendingCommand: 'reload'
     };
   }
 

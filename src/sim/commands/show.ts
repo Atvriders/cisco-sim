@@ -114,14 +114,21 @@ function showRunningConfig(state: DeviceState): string[] {
   ls.push('version 15.7');
   ls.push('service timestamps debug datetime msec');
   ls.push('service timestamps log datetime msec');
-  if (state.servicePasswordEncryption) ls.push('service password-encryption');
+  if (state.servicePasswordEncryption) {
+    ls.push('service password-encryption');
+  } else {
+    ls.push('no service password-encryption');
+  }
   ls.push('!');
   ls.push(`hostname ${state.hostname}`);
   ls.push('!');
+  ls.push('boot-start-marker');
+  ls.push('boot-end-marker');
+  ls.push('!');
+  ls.push('!');
   if (state.enableSecret) {
-    ls.push(state.servicePasswordEncryption
-      ? `enable secret 5 $1$mERr$${btoa(state.enableSecret).slice(0, 22)}`
-      : `enable secret 0 ${state.enableSecret}`);
+    // Always show as type 5 (MD5 hash) format
+    ls.push(`enable secret 5 $1$mERr$${btoa(state.enableSecret).slice(0, 22)}`);
   }
   if (state.enablePassword) {
     ls.push(state.servicePasswordEncryption
@@ -152,27 +159,33 @@ function showRunningConfig(state: DeviceState): string[] {
   }
   ls.push('!');
 
-  // VLANs
-  const vlanIds = Object.keys(state.vlans).map(Number).sort((a,b)=>a-b);
+  // VLANs (1-1001 only - extended range VLANs 1002-1005 are always present, not shown in config)
+  const vlanIds = Object.keys(state.vlans).map(Number).filter(v => v >= 1 && v <= 1001).sort((a,b)=>a-b);
   for (const vid of vlanIds) {
     const v = state.vlans[vid];
     ls.push(`vlan ${vid}`);
-    if (v.name !== `VLAN${String(vid).padStart(4,'0')}` && v.name !== 'default') {
-      ls.push(` name ${v.name}`);
-    } else if (vid !== 1) {
+    // VLAN 1 is default name, don't output name line for it
+    if (vid !== 1) {
       ls.push(` name ${v.name}`);
     }
     ls.push('!');
   }
 
-  // Interfaces
-  const ifOrder = ['Loopback', 'Vlan', 'FastEthernet', 'GigabitEthernet'];
+  // Interfaces - expand short names to full canonical names for running-config
+  function expandIfName(id: string): string {
+    return id
+      .replace(/^Fa(\d+\/\d+)$/, 'FastEthernet$1')
+      .replace(/^Gi(\d+\/\d+)$/, 'GigabitEthernet$1');
+    // Vlan and Loopback stay as-is
+  }
+
+  // Sort order: Loopback first, then Vlan, then FastEthernet (Fa), then GigabitEthernet (Gi)
   const sortedIfs = Object.keys(state.interfaces).sort((a, b) => {
-    const ai = ifOrder.findIndex(p => a.startsWith(p));
-    const bi = ifOrder.findIndex(p => b.startsWith(p));
-    if (ai !== bi) return ai - bi;
-    const anum = a.replace(/[^\d.\/]/g, '').split('/').map(Number);
-    const bnum = b.replace(/[^\d.\/]/g, '').split('/').map(Number);
+    const aIdx = a.startsWith('Loopback') ? 0 : a.startsWith('Vlan') ? 1 : a.startsWith('Fa') ? 2 : a.startsWith('Gi') ? 3 : 4;
+    const bIdx = b.startsWith('Loopback') ? 0 : b.startsWith('Vlan') ? 1 : b.startsWith('Fa') ? 2 : b.startsWith('Gi') ? 3 : 4;
+    if (aIdx !== bIdx) return aIdx - bIdx;
+    const anum = a.replace(/[^\d\/]/g, '').split('/').map(Number);
+    const bnum = b.replace(/[^\d\/]/g, '').split('/').map(Number);
     for (let i = 0; i < Math.max(anum.length, bnum.length); i++) {
       const d = (anum[i] || 0) - (bnum[i] || 0);
       if (d !== 0) return d;
@@ -182,8 +195,9 @@ function showRunningConfig(state: DeviceState): string[] {
 
   for (const id of sortedIfs) {
     const iface = state.interfaces[id];
+    const fullName = expandIfName(id);
     ls.push(`!`);
-    ls.push(`interface ${id}`);
+    ls.push(`interface ${fullName}`);
     if (iface.description) ls.push(` description ${iface.description}`);
     if (iface.adminState === 'down') ls.push(' shutdown');
     for (const ip of iface.ipAddresses) {
@@ -196,19 +210,18 @@ function showRunningConfig(state: DeviceState): string[] {
       ls.push(` ip access-group ${ag.acl} ${ag.direction}`);
     }
     if (!id.startsWith('Loopback') && !id.startsWith('Vlan')) {
-      if (iface.switchportMode !== 'access' || iface.accessVlan !== 1) {
-        if (iface.switchportMode === 'trunk') {
-          ls.push(' switchport mode trunk');
-          if (iface.trunkAllowedVlans !== '1-4094') {
-            ls.push(` switchport trunk allowed vlan ${iface.trunkAllowedVlans}`);
-          }
-          if (iface.trunkNativeVlan !== 1) {
-            ls.push(` switchport trunk native vlan ${iface.trunkNativeVlan}`);
-          }
-        } else {
-          ls.push(` switchport mode ${iface.switchportMode}`);
-          if (iface.accessVlan !== 1) ls.push(` switchport access vlan ${iface.accessVlan}`);
+      if (iface.switchportMode === 'trunk') {
+        ls.push(' switchport trunk encapsulation dot1q');
+        ls.push(' switchport mode trunk');
+        if (iface.trunkAllowedVlans && iface.trunkAllowedVlans !== '1-4094') {
+          ls.push(` switchport trunk allowed vlan ${iface.trunkAllowedVlans}`);
         }
+        if (iface.trunkNativeVlan && iface.trunkNativeVlan !== 1) {
+          ls.push(` switchport trunk native vlan ${iface.trunkNativeVlan}`);
+        }
+      } else {
+        if (iface.accessVlan !== 1) ls.push(` switchport access vlan ${iface.accessVlan}`);
+        ls.push(' switchport mode access');
       }
       if (iface.duplex !== 'auto') ls.push(` duplex ${iface.duplex}`);
       if (iface.speed !== 'auto') ls.push(` speed ${iface.speed}`);
@@ -231,7 +244,7 @@ function showRunningConfig(state: DeviceState): string[] {
 
   ls.push('!');
   if (state.ipRoutingEnabled) ls.push('ip routing');
-  if (state.defaultGateway) ls.push(`ip default-gateway ${state.defaultGateway}`);
+  if (!state.ipRoutingEnabled && state.defaultGateway) ls.push(`ip default-gateway ${state.defaultGateway}`);
   ls.push('!');
 
   // Static routes
@@ -346,19 +359,44 @@ function showInterfaces(state: DeviceState, ifFilter?: string): string[] {
   for (const iface of ifaces) {
     if (!iface) continue;
     const lineProto = iface.lineState === 'up' ? 'up' : 'down';
-    const adminStr = iface.adminState === 'down' ? 'administratively down' : iface.lineState === 'up' ? 'up' : iface.lineState;
-    const connected = iface.lineState === 'up' ? ' (connected)' : iface.lineState === 'notconnect' ? ' (notconnect)' : iface.lineState === 'err-disabled' ? ' (err-disabled)' : '';
-
-    ls.push(`${iface.id} is ${adminStr}, line protocol is ${lineProto}${connected}`);
-    ls.push(`  Hardware is ${iface.id.startsWith('Gi') ? 'Gigabit Ethernet' : iface.id.startsWith('Fa') ? 'Fast Ethernet' : iface.id.startsWith('Vlan') ? 'EtherSVI' : 'Loopback'}, address is ${iface.macAddress} (bia ${iface.macAddress})`);
-    if (iface.description) ls.push(`  Description: ${iface.description}`);
-    if (iface.ipAddresses.length > 0) {
-      const ip = iface.ipAddresses[0];
-      ls.push(`  Internet address is ${ip.address}/${maskToCidr(ip.mask)}`);
+    let adminStr: string;
+    let connected: string;
+    const isPhysical = iface.id.startsWith('Fa') || iface.id.startsWith('Gi');
+    if (iface.adminState === 'down') {
+      adminStr = 'administratively down';
+      connected = '';
+    } else if (iface.lineState === 'up') {
+      adminStr = 'up';
+      connected = isPhysical ? ' (connected)' : '';
+    } else if (iface.lineState === 'notconnect') {
+      adminStr = 'down';
+      connected = isPhysical ? ' (notconnect)' : '';
+    } else if (iface.lineState === 'err-disabled') {
+      adminStr = 'down';
+      connected = isPhysical ? ' (err-disabled)' : '';
+    } else {
+      adminStr = iface.lineState;
+      connected = '';
     }
 
-    const bw = iface.id.startsWith('Gi') ? 1000000 : iface.id.startsWith('Loopback') ? 8000000 : 100000;
-    const dly = iface.id.startsWith('Gi') ? 10 : iface.id.startsWith('Loopback') ? 5000 : 100;
+    ls.push(`${iface.id} is ${adminStr}, line protocol is ${lineProto}${connected}`);
+    const hwType = iface.id.startsWith('Gi') ? 'Gigabit Ethernet' : iface.id.startsWith('Fa') ? 'Fast Ethernet' : iface.id.startsWith('Vlan') ? 'EtherSVI' : 'Loopback';
+    if (iface.id.startsWith('Vlan') || iface.id.startsWith('Loopback')) {
+      ls.push(`  Hardware is ${hwType}`);
+    } else {
+      ls.push(`  Hardware is ${hwType}, address is ${iface.macAddress} (bia ${iface.macAddress})`);
+    }
+    if (iface.description) ls.push(`  Description: ${iface.description}`);
+    if (iface.ipAddresses.length > 0) {
+      for (const ip of iface.ipAddresses) {
+        ls.push(`  Internet address is ${ip.address}/${maskToCidr(ip.mask)}${ip.secondary ? ' secondary' : ''}`);
+      }
+    } else {
+      ls.push('  Internet address is not set');
+    }
+
+    const bw = iface.id.startsWith('Gi') ? 1000000 : iface.id.startsWith('Loopback') ? 8000000 : iface.id.startsWith('Vlan') ? 1000000 : 100000;
+    const dly = iface.id.startsWith('Gi') ? 10 : iface.id.startsWith('Loopback') ? 5000 : iface.id.startsWith('Vlan') ? 10 : 100;
     ls.push(`  MTU ${iface.mtu} bytes, BW ${bw} Kbit/sec, DLY ${dly} usec,`);
     ls.push(`     reliability 255/255, txload 1/255, rxload 1/255`);
     ls.push(`  Encapsulation ARPA, loopback not set`);
@@ -430,10 +468,20 @@ function showIpInterfaceBrief(state: DeviceState): string[] {
   for (const iface of [...svIs, ...phIs]) {
     const ipStr = iface.ipAddresses.length > 0 ? iface.ipAddresses[0].address : 'unassigned';
     const method = iface.ipAddresses.length > 0 ? 'manual' : 'unset';
-    const statusStr = iface.adminState === 'down' ? 'administratively down' : iface.lineState === 'up' ? 'up' : iface.lineState;
+    let statusStr: string;
+    if (iface.adminState === 'down') {
+      statusStr = 'administratively down';
+    } else if (iface.lineState === 'up') {
+      statusStr = 'up';
+    } else if (iface.lineState === 'err-disabled') {
+      statusStr = 'err-disabled';
+    } else if (iface.lineState === 'notconnect') {
+      statusStr = 'down';
+    } else {
+      statusStr = iface.lineState;
+    }
     const proto = iface.lineState === 'up' ? 'up' : 'down';
-    const shortId = iface.id.replace('FastEthernet', 'FastEthernet').replace('GigabitEthernet', 'GigabitEthernet');
-    ls.push(`${padRight(shortId, 23)}${padRight(ipStr, 16)}YES ${padRight(method, 7)}${padRight(statusStr, 22)}${proto}`);
+    ls.push(`${padRight(iface.id, 23)}${padRight(ipStr, 16)}YES ${padRight(method, 7)}${padRight(statusStr, 22)}${proto}`);
   }
   return ls;
 }
@@ -472,31 +520,61 @@ function showIpInterface(state: DeviceState, ifId: string): string[] {
   return ls;
 }
 
+// Extended VLANs always present on Catalyst switches (not user-configurable)
+const EXTENDED_VLANS = [
+  { id: 1002, name: 'fddi-default',       state: 'act/unsup' as const, ports: [] },
+  { id: 1003, name: 'token-ring-default', state: 'act/unsup' as const, ports: [] },
+  { id: 1004, name: 'fddinet-default',    state: 'act/unsup' as const, ports: [] },
+  { id: 1005, name: 'trnet-default',      state: 'act/unsup' as const, ports: [] },
+];
+
+function formatVlanPortList(ports: string[]): string[] {
+  // Returns lines of ports, wrapping at ~40 chars (real IOS wraps at column 50 of the port field)
+  if (ports.length === 0) return [''];
+  const shortPorts = ports.map(p => shortIfName(p));
+  const lines: string[] = [];
+  let current = '';
+  for (let i = 0; i < shortPorts.length; i++) {
+    const add = shortPorts[i] + (i < shortPorts.length - 1 ? ', ' : '');
+    if (current.length + add.length > 40 && current.length > 0) {
+      lines.push(current.trimEnd().replace(/,$/, ''));
+      current = add;
+    } else {
+      current += add;
+    }
+  }
+  if (current) lines.push(current.trimEnd().replace(/,$/, ''));
+  return lines;
+}
+
 function showVlan(state: DeviceState, brief: boolean): string[] {
   const ls: string[] = [];
-  if (brief) {
-    ls.push('VLAN Name                             Status    Ports');
-    ls.push('---- -------------------------------- --------- -------------------------------');
-    const vlanIds = Object.keys(state.vlans).map(Number).sort((a,b)=>a-b);
-    for (const vid of vlanIds) {
-      const v = state.vlans[vid];
-      const portStr = v.ports.map(p => shortIfName(p)).join(', ');
-      ls.push(`${padLeft(String(vid), 4)} ${padRight(v.name, 32)} ${padRight(v.state, 9)} ${portStr}`);
+  ls.push('VLAN Name                             Status    Ports');
+  ls.push('---- -------------------------------- --------- -------------------------------');
+
+  const userVlanIds = Object.keys(state.vlans).map(Number).sort((a,b)=>a-b);
+  const allVlans = [
+    ...userVlanIds.map(vid => state.vlans[vid]),
+    ...EXTENDED_VLANS
+  ];
+
+  for (const v of allVlans) {
+    const portLines = formatVlanPortList(v.ports);
+    const firstLine = `${padLeft(String(v.id), 4)} ${padRight(v.name, 32)} ${padRight(v.state, 9)} ${portLines[0] || ''}`;
+    ls.push(firstLine);
+    for (let i = 1; i < portLines.length; i++) {
+      // Continuation lines: pad to ports column (47 chars)
+      ls.push(`${''.padStart(47)}${portLines[i]}`);
     }
-  } else {
-    ls.push('VLAN Name                             Status    Ports');
-    ls.push('---- -------------------------------- --------- -------------------------------');
-    const vlanIds = Object.keys(state.vlans).map(Number).sort((a,b)=>a-b);
-    for (const vid of vlanIds) {
-      const v = state.vlans[vid];
-      const portStr = v.ports.map(p => shortIfName(p)).join(', ');
-      ls.push(`${padLeft(String(vid), 4)} ${padRight(v.name, 32)} ${padRight(v.state, 9)} ${portStr}`);
-    }
+  }
+
+  if (!brief) {
     ls.push('');
     ls.push('VLAN Type  SAID       MTU   Parent RingNo BridgeNo Stp  BrdgMode Trans1 Trans2');
     ls.push('---- ----- ---------- ----- ------ ------ -------- ---- -------- ------ ------');
-    for (const vid of Object.keys(state.vlans).map(Number).sort((a,b)=>a-b)) {
-      ls.push(`${padLeft(String(vid), 4)} enet  ${String(100000+vid).padStart(10,'0')} 1500  -      -      -        ieee -        0      0`);
+    for (const v of allVlans) {
+      const typeStr = v.id >= 1002 ? (v.id === 1002 ? 'fddi' : v.id === 1003 ? 'tr' : v.id === 1004 ? 'fdnet' : 'trnet') : 'enet';
+      ls.push(`${padLeft(String(v.id), 4)} ${padRight(typeStr, 5)} ${String(100000+v.id).padStart(10,'0')} 1500  -      -      -        ieee -        0      0`);
     }
     ls.push('');
     ls.push('Remote SPAN VLANs');
@@ -518,13 +596,26 @@ function showMacTable(state: DeviceState, dynamic: boolean): string[] {
   const entries = dynamic
     ? state.macTable.filter(e => e.type === 'dynamic' || e.type === 'secure-dynamic')
     : state.macTable;
-  const sorted = [...entries].sort((a, b) => a.vlan - b.vlan || a.mac.localeCompare(b.mac));
+  // Only show entries for up ports
+  const upPorts = new Set(
+    Object.values(state.interfaces)
+      .filter(i => i.lineState === 'up')
+      .map(i => i.id)
+  );
+  const visibleEntries = entries.filter(e => upPorts.has(e.port) || e.type === 'static');
+  const sorted = [...visibleEntries].sort((a, b) => a.vlan - b.vlan || a.mac.localeCompare(b.mac));
   for (const e of sorted) {
-    const typeStr = e.type.toUpperCase().replace('-', '');
-    ls.push(`  ${padLeft(String(e.vlan), 2)}    ${e.mac}    ${padRight(typeStr, 12)}${shortIfName(e.port)}`);
+    const typeMap: Record<string, string> = {
+      'dynamic': 'DYNAMIC',
+      'static': 'STATIC',
+      'secure-dynamic': 'DYNAMIC',
+      'secure-static': 'STATIC',
+    };
+    const typeStr = typeMap[e.type] ?? String(e.type).toUpperCase();
+    ls.push(`${padLeft(String(e.vlan), 4)}    ${e.mac}    ${padRight(typeStr, 12)}${shortIfName(e.port)}`);
   }
   ls.push('');
-  ls.push(`Total Mac Addresses for this criterion: ${entries.length}`);
+  ls.push(`Total Mac Addresses for this criterion: ${sorted.length}`);
   return ls;
 }
 
@@ -569,18 +660,18 @@ function showIpRoute(state: DeviceState): string[] {
     return 0;
   });
 
-  // Find default route
+  // Default route
   const defIdx = routesCopy.findIndex(r => r.network === '0.0.0.0');
   if (defIdx >= 0) {
     const r = routesCopy[defIdx];
-    const src = r.source === 'S' ? 'S*' : r.source;
-    let line = `${padRight(src, 6)}${r.network}/${maskToCidr(r.mask)} [${r.adminDistance}/${r.metric}]`;
+    const src = 'S*';
+    let line = `${padRight(src, 7)}0.0.0.0/0 [${r.adminDistance}/${r.metric}]`;
     if (r.nextHop) line += ` via ${r.nextHop}`;
     if (r.age) line += `, ${r.age}`;
     ls.push(line);
   }
 
-  // Group remaining
+  // Group remaining routes by major network (classful)
   const nonDef = routesCopy.filter(r => r.network !== '0.0.0.0');
   const majorNets: Map<string, typeof routesCopy> = new Map();
   for (const r of nonDef) {
@@ -597,12 +688,20 @@ function showIpRoute(state: DeviceState): string[] {
   for (const [major, rts] of majorNets) {
     const subnets = rts.length;
     const masks = new Set(rts.map(r => maskToCidr(r.mask)));
-    ls.push(`      ${major.split('/')[0]} is variably subnetted, ${subnets} subnets, ${masks.size} masks`);
+    if (subnets > 1 || masks.size > 1) {
+      ls.push(`      ${major.split('/')[0]} is variably subnetted, ${subnets} subnets, ${masks.size} masks`);
+    }
     for (const r of rts) {
-      let line = `${padRight(r.source, 6)}   ${r.network}/${maskToCidr(r.mask)} [${r.adminDistance}/${r.metric}]`;
-      if (r.nextHop) line += ` via ${r.nextHop}`;
-      if (r.interface && !r.nextHop) line += ` is directly connected, ${r.interface}`;
-      if (r.age) line += `, ${r.age}`;
+      const srcLabel = r.source === 'O' ? 'O' : r.source === 'D' ? 'D' : r.source === 'B' ? 'B' : r.source;
+      let line = `${padRight(srcLabel, 7)}  ${r.network}/${maskToCidr(r.mask)} [${r.adminDistance}/${r.metric}]`;
+      if (r.nextHop && r.interface) {
+        line += ` via ${r.nextHop}, ${r.age}, ${r.interface}`;
+      } else if (r.nextHop) {
+        line += ` via ${r.nextHop}`;
+        if (r.age) line += `, ${r.age}`;
+      } else if (r.interface) {
+        line += ` is directly connected, ${r.interface}`;
+      }
       ls.push(line);
     }
   }
@@ -631,9 +730,12 @@ function showSpanningTree(state: DeviceState, vlanId?: number): string[] {
     ls.push(`             Address     ${stp.localBridgeMac}`);
     ls.push(`             Hello Time   ${stp.helloTime} sec  Max Age ${stp.maxAge} sec  Forward Delay ${stp.forwardDelay} sec`);
     ls.push(`             Aging Time  300 sec`);
-    if (!stp.rootBridgeIsLocal && stp.rootPort) {
-      ls.push('');
-      ls.push(`  Root port: ${shortIfName(stp.rootPort)}, cost: ${stp.rootCost}`);
+    if (!stp.rootBridgeIsLocal) {
+      if (stp.rootPort) {
+        ls.push(`             Cost         ${stp.rootCost}`);
+        ls.push(`             Port         ${shortIfName(stp.rootPort)}`);
+      }
+      ls.push(`             Hello Time   ${stp.helloTime} sec  Max Age ${stp.maxAge} sec  Forward Delay ${stp.forwardDelay} sec`);
     }
     ls.push('');
     ls.push('Interface           Role Sts Cost      Prio.Nbr Type');
@@ -734,21 +836,25 @@ function showIpBgpSummary(state: DeviceState): string[] {
 function showProcessesCpu(_state: DeviceState): string[] {
   return [
     'CPU utilization for five seconds: 3%/1%; one minute: 4%; five minutes: 3%',
-    ' PID Runtime(ms)     Invoked      uSecs   5Sec   1Min   5Min TTY Process',
-    '   1         112        1842         60  0.00%  0.00%  0.00%   0 Chunk Manager',
-    '   2         304        6234         48  0.00%  0.00%  0.00%   0 Load Meter',
-    '   3        4820       12483        386  0.16%  0.12%  0.10%   0 Exec',
-    '   4       28340       48291        587  0.08%  0.06%  0.05%   0 CEF',
-    '   5        8234       18492        445  0.00%  0.00%  0.00%   0 ARP Input',
-    '   6        1234        4821        255  0.00%  0.00%  0.00%   0 OSPF Hello',
+    ' PID Runtime(ms)   Invoked      uSecs   5Sec   1Min   5Min TTY Process',
+    '   1           4       247         16  0.00%  0.00%  0.00%   0 Chunk Manager',
+    '   2         280     17326         16  0.00%  0.00%  0.00%   0 Load Meter',
+    '   3        4820     12483        386  0.16%  0.12%  0.10%   0 Exec',
+    '   4       28340     48291        587  0.08%  0.06%  0.05%   0 CEF',
+    '   5        8234     18492        445  0.00%  0.00%  0.00%   0 ARP Input',
+    '   6        1234      4821        255  0.00%  0.00%  0.00%   0 OSPF Hello',
+    '   7         892      3421        260  0.00%  0.00%  0.00%   0 IP Background',
+    '   8          56      1284         43  0.00%  0.00%  0.00%   0 CDP Protocol',
+    '   9        2341      8492        275  0.00%  0.00%  0.00%   0 Spanning Tree',
+    '  10         128      4921         26  0.00%  0.00%  0.00%   0 Net Background',
   ];
 }
 
 function showMemory(_state: DeviceState): string[] {
   return [
     '                Head    Total(b)     Used(b)     Free(b)   Lowest(b)  Largest(b)',
-    'Processor   607B3000   268435456   134217728   134217728   120000000   124000000',
-    '      I/O   28000000    16777216    12582912     4194304     3800000     4000000',
+    'Processor   65C7D498   268435456   132654321   135781135   130000000   134000000',
+    '      I/O   28000000    52428800    31457280    20971520    20000000    20000000',
   ];
 }
 
@@ -756,11 +862,13 @@ function showFlash(_state: DeviceState): string[] {
   return [
     'Directory of flash:/',
     '',
-    '    1  -rw-    23068672  Aug 01 2018 16:45:00 +00:00  c2960x-universalk9-mz.152-7.E6.bin',
-    '    2  -rw-        2048  Aug 01 2018 16:45:00 +00:00  config.text',
-    '    3  -rw-         512  Aug 01 2018 16:45:00 +00:00  private-config.text',
+    '    2  -rwx        1919                   <no date>  private-config.text',
+    '    3  -rwx         967                   <no date>  config.text',
+    '    4  -rwx       15561                   <no date>  express_setup.debug',
+    '    5  -rwx    35574252                   <no date>  c2960x-universalk9-mz.152-7.E6.bin',
+    '    6  -rwx        2163                   <no date>  multiple-fs',
     '',
-    '524288000 bytes total (500842496 bytes free)',
+    '64016384 bytes total (28439552 bytes free)',
   ];
 }
 
@@ -771,7 +879,9 @@ function showClock(state: DeviceState): string[] {
   const hh = String(d.getUTCHours()).padStart(2,'0');
   const mm = String(d.getUTCMinutes()).padStart(2,'0');
   const ss = String(d.getUTCSeconds()).padStart(2,'0');
-  return [`*${hh}:${mm}:${ss}.000 UTC ${days[d.getUTCDay()]} ${months[d.getUTCMonth()]} ${d.getUTCDate()} ${d.getUTCFullYear()}`];
+  // NTP synchronized = no asterisk; unsynchronized = asterisk prefix
+  const prefix = state.ntp.synchronized ? '' : '*';
+  return [`${prefix}${hh}:${mm}:${ss}.000 UTC ${days[d.getUTCDay()]} ${months[d.getUTCMonth()]} ${d.getUTCDate()} ${d.getUTCFullYear()}`];
 }
 
 function showLogging(state: DeviceState): string[] {
@@ -783,21 +893,30 @@ function showLogging(state: DeviceState): string[] {
   ls.push('');
   ls.push('No Inactive Message Discriminator.');
   ls.push('');
-  ls.push(`    Console logging: level debugging, 127 messages logged, xml disabled,`);
+  ls.push('    Console logging: level debugging, 42 messages logged, xml disabled,');
   ls.push('                     filtering disabled');
-  ls.push(`    Monitor logging: level debugging, 0 messages logged, xml disabled,`);
+  ls.push('    Monitor logging: level debugging, 0 messages logged, xml disabled,');
   ls.push('                     filtering disabled');
-  ls.push(`    Buffer logging:  level debugging, ${state.loggingBuffer.length} messages logged, xml disabled,`);
-  ls.push('                     filtering disabled');
-  if (state.loggingServer) {
-    ls.push(`    Logging to ${state.loggingServer}  (udp port 514, audit disabled,`);
-    ls.push(`               authentication disabled, encryption disabled, link up),`);
-    ls.push(`               ${state.loggingBuffer.length} message lines logged,`);
-    ls.push('               xml disabled, sequence-num disabled');
-    ls.push('               filtering disabled');
-  }
+  ls.push(`    Buffer logging:  level debugging, 42 messages logged, xml disabled,`);
+  ls.push('                    filtering disabled');
+  ls.push('    Logging Exception size (4096 bytes)');
+  ls.push('    Count and timestamp logging messages: disabled');
+  ls.push('    Persistent logging: disabled');
   ls.push('');
-  ls.push('    Trap logging: level informational, 0 message lines logged');
+  ls.push('No active filter modules.');
+  ls.push('');
+  if (state.loggingServer) {
+    ls.push(`    Trap logging: level informational, 47 message lines logged`);
+    ls.push(`        Logging to ${state.loggingServer}  (udp port 514,  audit disabled,`);
+    ls.push('              link up),');
+    ls.push('              47 message lines logged,');
+    ls.push('              0 message lines rate-limited,');
+    ls.push('              0 message lines dropped-by-MD,');
+    ls.push('              xml disabled, sequence number disabled');
+    ls.push('              filtering disabled');
+  } else {
+    ls.push('    Trap logging: level informational, 0 message lines logged');
+  }
   return ls;
 }
 
@@ -805,19 +924,26 @@ function showNtpStatus(state: DeviceState): string[] {
   if (!state.ntp.synchronized) {
     return [
       'Clock is unsynchronized, stratum 16, no reference clock',
-      'nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**10',
-      'ntp uptime is 7200 (1/100 of seconds), resolution is 4000',
+      'nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18',
+      'ntp uptime is 7200 (1/100 of seconds), resolution is 4001',
     ];
   }
+  const d = new Date(state.currentTime);
+  const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const hh = String(d.getUTCHours()).padStart(2,'0');
+  const mm = String(d.getUTCMinutes()).padStart(2,'0');
+  const ss = String(d.getUTCSeconds()).padStart(2,'0');
+  const timeStr = `${hh}:${mm}:${ss}.000 UTC ${days[d.getUTCDay()]} ${months[d.getUTCMonth()]} ${d.getUTCDate()} ${d.getUTCFullYear()}`;
   return [
     `Clock is synchronized, stratum ${state.ntp.stratum}, reference is ${state.ntp.referenceServer || '0.0.0.0'}`,
-    'nominal freq is 250.0000 Hz, actual freq is 249.9990 Hz, precision is 2**10',
-    'ntp uptime is 7200 (1/100 of seconds), resolution is 4000',
-    `reference time is E3ACD000.00000000 (00:00:00.000 UTC Mon Jan 1 2024)`,
-    `clock offset is ${state.ntp.offset} msec, root delay is 1.46 msec`,
-    'root dispersion is 0.49 msec, peer dispersion is 0.16 msec',
-    'loopfilter state is \'CTRL\' (Normal Controlled Loop), drift is 0.000004056 s/s',
-    'system poll interval is 64, last update was 36 sec ago.',
+    'nominal freq is 250.0000 Hz, actual freq is 249.9998 Hz, precision is 2**18',
+    'ntp uptime is 1920 (1/100 of seconds), resolution is 4001',
+    `reference time is E48A3F29.8A3D70A3 (${timeStr})`,
+    `clock offset is ${state.ntp.offset} msec, root delay is 1.06 msec`,
+    'root dispersion is 5.3721 msec, peer dispersion is 0.3721 msec',
+    'loopfilter state is \'CTRL\' (Normal Controlled Loop), drift is 0.000000000 s/s',
+    'system poll interval is 1024, last update was 123 sec ago.',
   ];
 }
 
@@ -827,21 +953,15 @@ function showEtherchannelSummary(state: DeviceState): string[] {
   ls.push('        I - stand-alone s - suspended');
   ls.push('        H - Hot-standby (LACP only)');
   ls.push('        R - Layer3      S - Layer2');
-  ls.push('        U - in use      N - not in use, no aggregation');
-  ls.push('        f - failed to allocate aggregator');
+  ls.push('        U - in use      f - failed to allocate aggregator');
   ls.push('');
   ls.push('        M - not in use, minimum links not met');
-  ls.push('        m - not in use, port not aggregated due to minimum links not met');
   ls.push('        u - unsuitable for bundling');
   ls.push('        w - waiting to be aggregated');
   ls.push('        d - default port');
+  ls.push('');
   ls.push('        A - formed by Auto LAG');
   ls.push('');
-  ls.push('Number of channel-groups in use: 0');
-  ls.push('Number of aggregators:           0');
-  ls.push('');
-  ls.push('Group  Port-channel  Protocol    Ports');
-  ls.push('------+-------------+-----------+-----------------------------------------------');
 
   const groups: Map<number, Interface[]> = new Map();
   for (const iface of Object.values(state.interfaces)) {
@@ -851,9 +971,16 @@ function showEtherchannelSummary(state: DeviceState): string[] {
       groups.get(g)!.push(iface);
     }
   }
+
+  ls.push(`Number of channel-groups in use: ${groups.size}`);
+  ls.push(`Number of aggregators:           ${groups.size}`);
+  ls.push('');
+  ls.push('Group  Port-channel  Protocol    Ports');
+  ls.push('------+-------------+-----------+-----------------------------------------------');
+
   for (const [g, ifs] of groups) {
     const mode = ifs[0].channelGroup!.mode;
-    const proto = mode === 'on' ? '-' : 'LACP';
+    const proto = mode === 'on' ? '-' : mode === 'active' || mode === 'passive' ? 'LACP' : 'LACP';
     const ports = ifs.map(i => `${shortIfName(i.id)}(P)`).join('   ');
     ls.push(`${padLeft(String(g),6)}  Po${g}(SU)        ${padRight(proto, 11)}${ports}`);
   }
@@ -864,15 +991,15 @@ function showEtherchannelSummary(state: DeviceState): string[] {
 function showPortSecurity(state: DeviceState): string[] {
   const ls: string[] = [];
   ls.push('Secure Port  MaxSecureAddr  CurrentAddr  SecurityViolation  Security Action');
-  ls.push('             (Count)        (Count)      (Count)');
-  ls.push('-----------------------------------------------------------------------');
+  ls.push('                (Count)       (Count)          (Count)');
+  ls.push('---------------------------------------------------------------------------');
 
-  for (const iface of Object.values(state.interfaces)) {
-    if (iface.portSecurity.enabled) {
-      ls.push(`${padRight(shortIfName(iface.id), 13)}${padLeft(String(iface.portSecurity.maxMacAddresses), 15)}${padLeft(String(iface.portSecurity.learnedAddresses.length), 13)}${padLeft('1', 21)}    ${iface.portSecurity.violation}`);
-    }
+  const secPorts = Object.values(state.interfaces).filter(i => i.portSecurity.enabled);
+  for (const iface of secPorts) {
+    const violationAction = iface.portSecurity.violation.charAt(0).toUpperCase() + iface.portSecurity.violation.slice(1);
+    ls.push(`${padLeft(shortIfName(iface.id), 11)}${padLeft(String(iface.portSecurity.maxMacAddresses), 15)}${padLeft(String(iface.portSecurity.learnedAddresses.length), 13)}${padLeft('0', 19)}         ${violationAction}`);
   }
-  ls.push('-----------------------------------------------------------------------');
+  ls.push('---------------------------------------------------------------------------');
   ls.push('Total Addresses in System (excluding one mac per port)     : 0');
   ls.push('Max Addresses limit in System (excluding one mac per port) : 4096');
   return ls;
@@ -910,17 +1037,22 @@ function showIpDhcpBinding(_state: DeviceState): string[] {
   ];
 }
 
-function showEnvironment(_state: DeviceState): string[] {
+function showEnvironment(state: DeviceState): string[] {
   return [
-    'Switch 1 FAN 1 is OK',
-    'Switch 1 FAN 2 is OK',
-    'SYSTEM TEMPERATURE is OK',
-    'Temperature Value: 28 Degree Celsius',
-    'Temperature State: GREEN',
-    'Yellow Threshold : 46 Degree Celsius',
-    'Red Threshold    : 60 Degree Celsius',
-    'SW  PW         PW Status',
-    ' 1  A          GOOD',
+    `${state.hostname} SYSTEM ENVIRONMENT`,
+    '',
+    'FAN:',
+    'Fan 1 is OK',
+    'Fan 2 is OK',
+    '',
+    'POWER:',
+    'Power supply 1 is present and operating',
+    'Power supply 2 is absent',
+    '',
+    'TEMPERATURE:',
+    'System temperature is 38 Celsius',
+    'Temperature Warning threshold is 60 Celsius',
+    'Temperature Critical threshold is 70 Celsius',
   ];
 }
 
@@ -1033,7 +1165,7 @@ export const showHandler: CommandHandler = (args, state, _raw, _negated) => {
   }
 
   if (sub.startsWith('vlan')) {
-    const brief = sub2.startsWith('bri') || sub2 === '';
+    const brief = sub2.startsWith('bri');
     return makeResult(showVlan(state, brief));
   }
 
@@ -1088,7 +1220,8 @@ export const showHandler: CommandHandler = (args, state, _raw, _negated) => {
   if (sub === 'users') {
     return makeResult([
       '    Line       User       Host(s)              Idle       Location',
-      '*   0 con 0    admin      idle                 00:00:00',
+      '*  0 con 0     admin      idle                 00:00:00',
+      '   1 vty 0                idle                 00:00:05',
     ]);
   }
 

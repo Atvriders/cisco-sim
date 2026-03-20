@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useEffect, useState, useRef } from 'react';
 import type { DeviceState } from '../sim/types';
 
 interface Props {
@@ -12,11 +12,15 @@ function formatUptime(ms: number): string {
   const days = Math.floor(secs / 86400);
   if (days > 0) return `${days}d ${hours}h ${mins}m`;
   if (hours > 0) return `${hours}h ${mins}m`;
-  return `${mins}m`;
+  return `${mins}m ${secs % 60}s`;
 }
 
-function shortId(id: string): string {
-  return id.replace('FastEthernet', 'Fa').replace('GigabitEthernet', 'Gi').replace('Loopback', 'Lo');
+function shortIfName(id: string): string {
+  return id
+    .replace('FastEthernet', 'Fa')
+    .replace('GigabitEthernet', 'Gi')
+    .replace('Loopback', 'Lo')
+    .replace('Vlan', 'Vl');
 }
 
 function modeLabel(mode: string): string {
@@ -35,14 +39,28 @@ function modeLabel(mode: string): string {
 }
 
 export default function StatusPanel({ deviceState }: Props) {
-  const uptime = formatUptime(deviceState.currentTime - deviceState.bootTime);
+  // Live uptime counter
+  const [liveTime, setLiveTime] = useState(Date.now());
+  const mountTimeRef = useRef(Date.now());
 
-  // Stable random CPU value
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setLiveTime(Date.now());
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Use the actual device bootTime relative to live clock
+  const elapsed = liveTime - mountTimeRef.current + (deviceState.currentTime - deviceState.bootTime);
+  const uptime = formatUptime(elapsed);
+
+  // Stable CPU value using useMemo seeded once - won't change on re-renders
   const cpuPct = useMemo(() => 2 + Math.floor(Math.random() * 6), []);
   const memUsed = 131072;
   const memTotal = 262144;
   const memPct = Math.round((memUsed / memTotal) * 100);
 
+  // Physical interfaces only (Fa and Gi, no Loopback/Vlan SVIs)
   const physicalIfaces = Object.values(deviceState.interfaces)
     .filter(i => i.id.startsWith('Fa') || i.id.startsWith('Gi'))
     .sort((a, b) => {
@@ -53,6 +71,8 @@ export default function StatusPanel({ deviceState }: Props) {
     });
 
   const vlans = Object.values(deviceState.vlans).sort((a, b) => a.id - b.id);
+  const macCount = deviceState.macTable.length;
+  const enableSecretSet = !!(deviceState.enableSecret);
 
   return (
     <div className="status-panel">
@@ -67,6 +87,38 @@ export default function StatusPanel({ deviceState }: Props) {
         <div style={{ color: '#33ff33', fontSize: 12 }}>{uptime}</div>
       </div>
 
+      {/* Save status */}
+      <div>
+        {deviceState.unsavedChanges ? (
+          <div className="status-unsaved">⚠ UNSAVED CHANGES</div>
+        ) : (
+          <div className="status-saved">✓ SAVED</div>
+        )}
+      </div>
+
+      {/* Security status */}
+      <div>
+        <div className="status-section-title">SECURITY</div>
+        {enableSecretSet ? (
+          <div style={{ color: '#33ff33', fontSize: 10 }}>✓ Enable secret set</div>
+        ) : (
+          <div style={{ color: '#ff4444', fontSize: 10 }}>✗ No enable secret</div>
+        )}
+      </div>
+
+      {/* VLANs and MAC table counts */}
+      <div>
+        <div className="status-section-title">TABLE COUNTS</div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
+          <span style={{ color: '#555', fontSize: 10 }}>VLANs</span>
+          <span style={{ color: '#33aa33', fontSize: 10 }}>{vlans.length}</span>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+          <span style={{ color: '#555', fontSize: 10 }}>MAC entries</span>
+          <span style={{ color: '#33aa33', fontSize: 10 }}>{macCount}</span>
+        </div>
+      </div>
+
       <div>
         <div className="status-section-title">INTERFACES</div>
         <div className="if-grid">
@@ -78,7 +130,7 @@ export default function StatusPanel({ deviceState }: Props) {
             return (
               <div key={iface.id} className="if-item">
                 <div className={`if-dot ${dotClass}`} />
-                <span className="if-label">{shortId(iface.id)}</span>
+                <span className="if-label">{shortIfName(iface.id)}</span>
               </div>
             );
           })}
@@ -118,16 +170,15 @@ export default function StatusPanel({ deviceState }: Props) {
         </div>
       </div>
 
-      {deviceState.unsavedChanges && (
-        <div style={{ color: '#ffb000', fontSize: 10, padding: '4px 6px', background: 'rgba(255,176,0,0.1)', borderRadius: 3, border: '1px solid rgba(255,176,0,0.3)' }}>
-          ⚠ Unsaved changes
-        </div>
-      )}
-
       <div>
         <div className="status-section-title">PLATFORM</div>
         <div style={{ color: '#333', fontSize: 9 }}>WS-C2960X-48TS-L</div>
         <div style={{ color: '#333', fontSize: 9 }}>IOS 15.7(3)M3</div>
+      </div>
+
+      {/* Tooltip hint at the bottom */}
+      <div className="status-hint">
+        Type ? for help&nbsp;&nbsp;|&nbsp;&nbsp;Tab to complete
       </div>
     </div>
   );

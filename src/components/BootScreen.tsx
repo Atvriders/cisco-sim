@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { BOOT_LINES, BOOT_LINE_DELAYS } from '../sim/boot';
 
 interface Props {
@@ -9,6 +9,8 @@ export default function BootScreen({ onComplete }: Props) {
   const [displayedLines, setDisplayedLines] = useState<string[]>([]);
   const [done, setDone] = useState(false);
   const [showCursor, setShowCursor] = useState(false);
+  const [fadingOut, setFadingOut] = useState(false);
+  const outputRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -25,6 +27,10 @@ export default function BootScreen({ onComplete }: Props) {
       timeoutId = setTimeout(() => {
         if (cancelled) return;
         setDisplayedLines(prev => [...prev, BOOT_LINES[index]]);
+        // Auto-scroll
+        if (outputRef.current) {
+          outputRef.current.scrollTop = outputRef.current.scrollHeight;
+        }
         showLine(index + 1);
       }, delay);
     };
@@ -36,11 +42,19 @@ export default function BootScreen({ onComplete }: Props) {
     };
   }, []);
 
+  const triggerComplete = useCallback(() => {
+    if (!done || fadingOut) return;
+    setFadingOut(true);
+    setTimeout(() => {
+      onComplete();
+    }, 350);
+  }, [done, fadingOut, onComplete]);
+
   const handleKey = useCallback((e: KeyboardEvent) => {
     if (done && (e.key === 'Enter' || e.key === ' ')) {
-      onComplete();
+      triggerComplete();
     }
-  }, [done, onComplete]);
+  }, [done, triggerComplete]);
 
   useEffect(() => {
     window.addEventListener('keydown', handleKey);
@@ -48,11 +62,19 @@ export default function BootScreen({ onComplete }: Props) {
   }, [handleKey]);
 
   return (
-    <div className="boot-screen" onClick={() => done && onComplete()}>
-      {displayedLines.map((line, i) => (
-        <div key={i} className="boot-line">{line || '\u00a0'}</div>
-      ))}
-      {showCursor && <span className="boot-cursor" />}
+    <div
+      className={`boot-screen${fadingOut ? ' boot-fade-out' : ''}`}
+      onClick={() => done && triggerComplete()}
+    >
+      {/* Amber POWER LED in top-right corner */}
+      <div className="boot-power-led" title="POWER" />
+
+      <div className="boot-output" ref={outputRef}>
+        {displayedLines.map((line, i) => (
+          <div key={i} className="boot-line">{line || '\u00a0'}</div>
+        ))}
+        {showCursor && <span className="boot-cursor" />}
+      </div>
     </div>
   );
 }

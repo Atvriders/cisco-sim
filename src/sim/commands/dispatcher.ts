@@ -134,21 +134,11 @@ export function dispatch(input: string, state: DeviceState): CommandResult {
   const resolution = resolveAbbreviation(firstToken, validCmds);
 
   if (!resolution) {
-    // Check if it might be a show abbreviated
-    const allResolution = resolveAbbreviation(firstToken, [...new Set([...USER_EXEC_CMDS, ...PRIV_EXEC_CMDS, ...GLOBAL_CONFIG_CMDS])]);
-    if (allResolution && state.mode === 'user-exec') {
-      return {
-        output: [
-          out(`% Invalid input detected at '^' marker.`, 'error'),
-          out(`          ^`, 'error'),
-          out(`% This command is not available in user-exec mode. Try 'enable' first.`, 'error'),
-        ]
-      };
-    }
     const errPos = trimmed.indexOf(firstToken);
+    const caret = ' '.repeat(errPos) + '^';
     return {
       output: [
-        out(`         ^`, 'error'),
+        out(caret, 'error'),
         out(`% Invalid input detected at '^' marker.`, 'error'),
       ]
     };
@@ -156,7 +146,7 @@ export function dispatch(input: string, state: DeviceState): CommandResult {
 
   if (resolution.ambiguous) {
     return {
-      output: [out(`% Ambiguous command: "${firstToken}"`, 'error')]
+      output: [out(`% Ambiguous command:  "${firstToken}"`, 'error')]
     };
   }
 
@@ -184,11 +174,17 @@ export function dispatch(input: string, state: DeviceState): CommandResult {
 
     case 'global-config': {
       if (cmd === 'no') {
-        // Re-dispatch with negated flag, stripping 'no'
         const inner = restArgs.join(' ');
         if (!inner) return { output: [out('% Incomplete command.', 'error')] };
-        return dispatch(inner, { ...state });
-        // Actually re-dispatch with negated=true
+        const innerTokens = tokenize(inner);
+        const innerFirst = innerTokens[0] || '';
+        const validCmdsGlobal = getCmdsForMode('global-config');
+        const innerResolution = resolveAbbreviation(innerFirst, validCmdsGlobal);
+        if (!innerResolution || innerResolution.ambiguous) {
+          return { output: [out('% Invalid input detected at \'^\' marker.', 'error')] };
+        }
+        const innerCmd = innerResolution.resolved.toLowerCase();
+        return configHandler([innerCmd, ...innerTokens.slice(1)], state, inner, true);
       }
       return configHandler(cmdArgs, state, trimmed, negated);
     }

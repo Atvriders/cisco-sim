@@ -1,4 +1,5 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState, MutableRefObject } from 'react';
+import type { CliMode } from '../sim/types';
 
 interface Props {
   prompt: string;
@@ -9,16 +10,30 @@ interface Props {
   onUp: (v: string) => string;
   onDown: () => string;
   disabled?: boolean;
+  onFocusRef?: MutableRefObject<(() => void) | null>;
+  mode?: CliMode;
 }
 
-export default function TerminalInput({ prompt, value, onChange, onSubmit, onTab, onUp, onDown, disabled }: Props) {
+export default function TerminalInput({ prompt, value, onChange, onSubmit, onTab, onUp, onDown, disabled, onFocusRef, mode }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const [isFocused, setIsFocused] = useState(false);
 
   useEffect(() => {
     if (!disabled) {
       inputRef.current?.focus();
     }
   }, [disabled]);
+
+  // Expose focus trigger to parent
+  useEffect(() => {
+    if (onFocusRef) {
+      onFocusRef.current = () => {
+        if (!disabled) {
+          inputRef.current?.focus();
+        }
+      };
+    }
+  }, [onFocusRef, disabled]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
@@ -39,6 +54,7 @@ export default function TerminalInput({ prompt, value, onChange, onSubmit, onTab
       onChange(newVal);
     } else if (e.key === '?') {
       e.preventDefault();
+      // Show the ? appended then submit immediately - real Cisco behavior
       onSubmit(value + '?');
     } else if (e.key === 'c' && e.ctrlKey) {
       e.preventDefault();
@@ -51,22 +67,43 @@ export default function TerminalInput({ prompt, value, onChange, onSubmit, onTab
     }
   };
 
+  // Determine if in config mode (amber) or exec mode (green)
+  const isConfigMode = mode && mode !== 'user-exec' && mode !== 'priv-exec';
+  const rowClassName = [
+    'terminal-input-row',
+    isFocused ? 'focused' : '',
+    isConfigMode ? 'config-mode' : '',
+  ].filter(Boolean).join(' ');
+
+  const promptClassName = [
+    'terminal-prompt',
+    isConfigMode ? 'config-mode' : '',
+  ].filter(Boolean).join(' ');
+
   return (
-    <div className="terminal-input-row" onClick={() => inputRef.current?.focus()}>
-      <span className="terminal-prompt">{prompt}</span>
-      <input
-        ref={inputRef}
-        type="text"
-        className="terminal-input-field"
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        onKeyDown={handleKeyDown}
-        disabled={disabled}
-        autoComplete="off"
-        autoCorrect="off"
-        autoCapitalize="off"
-        spellCheck={false}
-      />
+    <div
+      className={rowClassName}
+      onClick={() => inputRef.current?.focus()}
+    >
+      <span className={promptClassName}>{prompt}</span>
+      <div className="terminal-input-wrapper">
+        <input
+          ref={inputRef}
+          type="text"
+          className="terminal-input-field"
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          onKeyDown={handleKeyDown}
+          onFocus={() => setIsFocused(true)}
+          onBlur={() => setIsFocused(false)}
+          disabled={disabled}
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="off"
+          spellCheck={false}
+        />
+        {isFocused && !disabled && <span className="block-cursor">▋</span>}
+      </div>
     </div>
   );
 }

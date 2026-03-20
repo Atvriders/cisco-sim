@@ -212,7 +212,7 @@ export function createInitialState(): DeviceState {
   const vlans: Record<number, Vlan> = {
     1: {
       id: 1, name: 'default', state: 'active',
-      ports: ['Fa0/17','Fa0/18','Fa0/19','Fa0/20','Fa0/21','Fa0/22','Fa0/23','Fa0/24']
+      ports: []
     },
     10: {
       id: 10, name: 'DATA', state: 'active',

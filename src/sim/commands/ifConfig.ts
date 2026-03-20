@@ -161,9 +161,19 @@ export const ifConfigHandler: CommandHandler = (args, state, _raw, negated) => {
   }
 
   if (cmd === 'no' && (args[1] || '').toLowerCase() === 'shutdown') {
+    // Ports Fa0/1, Fa0/3, Fa0/5 are "connected" (cable plugged in)
+    const connectedPorts = new Set(['Fa0/1', 'Fa0/3', 'Fa0/5', 'Gi0/1', 'Gi0/2']);
+    let newLineState: typeof iface.lineState;
+    if (iface.id.startsWith('Vlan') || iface.id.startsWith('Loopback')) {
+      newLineState = 'up';
+    } else if (connectedPorts.has(iface.id)) {
+      newLineState = 'up';
+    } else {
+      newLineState = 'notconnect';
+    }
     return updateIface({
       adminState: 'up',
-      lineState: iface.id.startsWith('Fa') || iface.id.startsWith('Gi') ? 'notconnect' : 'up'
+      lineState: newLineState
     });
   }
 
@@ -300,7 +310,15 @@ export const ifConfigHandler: CommandHandler = (args, state, _raw, negated) => {
     if (negated) return updateIface({ channelGroup: undefined });
     const num = parseInt(args[1] || '1');
     const mode = (args[3] || 'on').toLowerCase() as 'active' | 'passive' | 'on';
-    return updateIface({ channelGroup: { number: num, mode } });
+    const result = updateIface({ channelGroup: { number: num, mode } });
+    // Emit message only if this is a new port-channel group
+    const alreadyExists = Object.values(state.interfaces).some(
+      i => i.id !== ifId && i.channelGroup?.number === num
+    );
+    if (!alreadyExists && !iface.channelGroup) {
+      result.output = [out(`Creating a port-channel interface Port-channel ${num}`)];
+    }
+    return result;
   }
 
   if (cmd === 'storm-control') {
