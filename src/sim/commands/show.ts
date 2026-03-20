@@ -1250,6 +1250,165 @@ function showNtpStatus(state: DeviceState): string[] {
   ];
 }
 
+function showNtpAssociations(_state: DeviceState): string[] {
+  return [
+    '  address         ref clock       st   when   poll reach  delay  offset   disp',
+    '*~192.168.1.254   .GPS.            2     45     64   377   1.062   2.548   0.372',
+    ' * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured',
+  ];
+}
+
+function showNtpAssociationsDetail(_state: DeviceState): string[] {
+  return [
+    '192.168.1.254 configured, our_master, sane, valid, stratum 2',
+    'ref ID .GPS., time E48A3F29.8A3D70A3 (15:30:01.540 UTC Fri Mar 20 2026)',
+    'our mode client, peer mode server, our poll intvl 64, peer poll intvl 64',
+    'root delay 1.0619 msec, root disp 5.3721, reach 377, sync dist 5.831',
+    'delay 1.0620 msec, offset 2.5481 msec, dispersion 0.3721',
+    'precision 2**18, version 4',
+    'assoc ID 1, assoc name 192.168.1.254',
+    'assoc in packets 348, assoc out packets 348, assoc error packets 0',
+    'org time E48A3F29.8A3D70A3 (15:30:01.540 UTC Fri Mar 20 2026)',
+    'rcv time E48A3F29.8A3D70A3 (15:30:01.540 UTC Fri Mar 20 2026)',
+    'xmt time E48A3F29.8A3D70A3 (15:30:01.540 UTC Fri Mar 20 2026)',
+    'filtdelay =   1.06   1.07   1.05   1.08   1.06   1.07   1.06   1.07',
+    'filtoffset=   2.55   2.54   2.55   2.54   2.55   2.54   2.55   2.54',
+    'filterror =   0.37   0.62   0.87   1.12   1.37   1.62   1.87   2.12',
+  ];
+}
+
+function showVtpStatus(state: DeviceState): string[] {
+  const vtp = state.vtp;
+  const modeStr = vtp.mode.charAt(0).toUpperCase() + vtp.mode.slice(1);
+  const vlanCount = Object.keys(state.vlans).length;
+  const updaterIp = vtp.updatedBy.includes('@') ? vtp.updatedBy.split('@')[1] : vtp.updatedBy;
+  return [
+    `VTP Version capable             : 1 to 3`,
+    `VTP version running             : ${vtp.version}`,
+    `VTP Domain Name                 : ${vtp.domain}`,
+    `VTP Pruning Mode                : ${vtp.pruningEnabled ? 'Enabled' : 'Disabled'}`,
+    `VTP Traps Generation            : Disabled`,
+    `Device ID                       : 0019.e8a2.3c00`,
+    `Configuration last modified by ${updaterIp} at ${vtp.updatedAt}`,
+    `Local updater ID is ${updaterIp} on interface Vl1 (first interface found)`,
+    ``,
+    `Feature VLAN:`,
+    `--------------`,
+    `VTP Operating Mode                : ${modeStr}`,
+    `Maximum VLANs supported locally   : 1005`,
+    `Number of existing VLANs          : ${vlanCount}`,
+    `Configuration Revision            : ${vtp.configRevision}`,
+    `MD5 digest                        : 0x3A 0x1B 0x2C 0x4D 0x5E 0x6F 0x7A 0x8B`,
+    `                                    0x9C 0xAD 0xBE 0xCF 0xD0 0xE1 0xF2 0x03`,
+  ];
+}
+
+function showVtpCounters(_state: DeviceState): string[] {
+  return [
+    'VTP statistics:',
+    'Summary advertisements received    : 142',
+    'Subset advertisements received     : 8',
+    'Request advertisements received    : 0',
+    'Summary advertisements transmitted : 348',
+    'Subset advertisements transmitted  : 12',
+    'Request advertisements transmitted : 0',
+    'Number of config revision errors    : 0',
+    'Number of config digest errors      : 0',
+    'Number of V1 summary errors         : 0',
+  ];
+}
+
+function showVtpPassword(state: DeviceState): string[] {
+  const pwd = state.vtp.password;
+  return [`VTP Password: ${pwd ? pwd : '(not configured)'}`];
+}
+
+function showSnmp(state: DeviceState): string[] {
+  const snmp = state.snmp;
+  const ls: string[] = [];
+  ls.push('Chassis: FOC2048Z0TN');
+  if (snmp.contact) ls.push(`Contact: ${snmp.contact}`);
+  if (snmp.location) ls.push(`Location: ${snmp.location}`);
+  ls.push('0 SNMP packets input');
+  ls.push('    0 Bad SNMP version errors');
+  ls.push('    0 Unknown community name');
+  ls.push('    0 Illegal operation for community name supplied');
+  ls.push('    0 Encoding errors');
+  ls.push('    0 Number of requested variables');
+  ls.push('    0 Number of altered variables');
+  ls.push('    0 Get-request PDUs');
+  ls.push('    0 Get-next PDUs');
+  ls.push('    0 Set-request PDUs');
+  ls.push('    0 Input queue packet drops (Maximum queue size 1000)');
+  ls.push('0 SNMP packets output');
+  ls.push('    0 Too big errors (Maximum packet size 1500)');
+  ls.push('    0 No such name errors');
+  ls.push('    0 Bad values errors');
+  ls.push('    0 General errors');
+  ls.push('    0 Get-response PDUs');
+  ls.push('    0 SNMP trap PDUs');
+  ls.push(`SNMP global trap: ${snmp.enabled ? 'enabled' : 'disabled'}`);
+  ls.push('SNMP logging: disabled');
+  for (const host of snmp.trapHosts) {
+    ls.push(`    Logging to ${host.ip}.162, 0/10, 0 sent, 0 dropped.`);
+  }
+  return ls;
+}
+
+function showSnmpCommunity(state: DeviceState): string[] {
+  const ls: string[] = [];
+  state.snmp.communities.forEach((c, i) => {
+    ls.push(`Community name: ${c.name}`);
+    ls.push(`Community Index: cisco${i}`);
+    ls.push(`Community SecurityName: ${c.name}`);
+    ls.push(`storage-type: nonvolatile        active`);
+    ls.push('');
+  });
+  return ls;
+}
+
+function showCdpGlobal(state: DeviceState): string[] {
+  return [
+    'Global CDP information:',
+    `        Sending CDP packets every ${state.cdpTimer} seconds`,
+    `        Sending a holdtime value of ${state.cdpHoldtime} seconds`,
+    `        Sending CDPv2 advertisements is enabled`,
+  ];
+}
+
+function showCdpInterface(state: DeviceState, ifFilter?: string): string[] {
+  const ls: string[] = [];
+  const physIfaces = Object.values(state.interfaces).filter(i => {
+    if (!i.cdpEnabled) return false;
+    if (ifFilter) {
+      const norm = ifFilter.toLowerCase();
+      return i.id.toLowerCase() === norm || i.id.toLowerCase().startsWith(norm);
+    }
+    return i.id.startsWith('Fa') || i.id.startsWith('Gi');
+  });
+  for (const iface of physIfaces) {
+    const adminStr = iface.adminState === 'down' ? 'administratively down' : iface.lineState === 'up' ? 'up' : 'down';
+    const proto = iface.lineState === 'up' ? 'up' : 'down';
+    const fullName = expandIfNameFull(iface.id);
+    ls.push(`${fullName} is ${adminStr}, line protocol is ${proto}`);
+    ls.push(`  Encapsulation ARPA`);
+    ls.push(`  Sending CDP packets every ${state.cdpTimer} seconds`);
+    ls.push(`  Holdtime is ${state.cdpHoldtime} seconds`);
+  }
+  return ls;
+}
+
+function showCdpTraffic(_state: DeviceState): string[] {
+  return [
+    'CDP counters :',
+    '        Total packets output: 347, Input: 289',
+    '        Hdr syntax: 0, Chksum error: 0, Encaps failed: 0',
+    '        No memory: 0, Invalid packet: 0, ',
+    '        CDP version 1 advertisements output: 0, Input: 0',
+    '        CDP version 2 advertisements output: 347, Input: 289',
+  ];
+}
+
 function showEtherchannelSummary(state: DeviceState): string[] {
   const ls: string[] = [];
   ls.push('Flags:  D - down        P - bundled in port-channel');
@@ -2523,27 +2682,6 @@ function showCryptoPkiCertificates(state: DeviceState): string[] {
   ];
 }
 
-function showIpArpInspection(state: DeviceState): string[] {
-  const ls: string[] = [];
-  ls.push(' Source Mac Validation      : Disabled');
-  ls.push(' Destination Mac Validation : Disabled');
-  ls.push(' IP-MAC Validation          : Disabled');
-  ls.push('');
-  ls.push(' Vlan     Configuration    Operation   ACL Match          Static ACL');
-  ls.push(' ----     -------------    ---------   ---------          ----------');
-  const vlanIds = Object.keys(state.vlans).map(Number).filter(v => v !== 1).sort((a,b)=>a-b).slice(0,2);
-  for (const vid of vlanIds) {
-    ls.push(`   ${String(vid).padEnd(6)}   Disabled         Inactive`);
-  }
-  ls.push('');
-  ls.push(' Vlan     Forwarded        Dropped      DHCP Drops      ACL Drops');
-  ls.push(' ----     ---------        -------      ----------      ---------');
-  for (const vid of vlanIds) {
-    ls.push(`   ${String(vid).padEnd(6)}           0              0               0              0`);
-  }
-  return ls;
-}
-
 export const showHandler: CommandHandler = (args, state, _raw, _negated) => {
   // Parse pipe operator: args may contain '|' as a token
   let mainArgs = args;
@@ -2695,6 +2833,25 @@ export const showHandler: CommandHandler = (args, state, _raw, _negated) => {
     if (sub2 === 'ssh') return makeResult(showIpSsh(state));
     if (sub2 === 'traffic') return makeResult(showIpTraffic(state));
     if (sub2 === 'cache') return makeResult(showIpCache(state));
+    if (sub2 === 'sla') {
+      const sub3 = (mainArgs[2] || '').toLowerCase();
+      const sub4 = (mainArgs[3] || '').toLowerCase();
+      if (sub3.startsWith('stat') || sub3 === 'statistics') {
+        const idArg = parseInt(sub4 || '');
+        return makeResult(showIpSlaStatistics(state, isNaN(idArg) ? undefined : idArg));
+      }
+      if (sub3.startsWith('sum') || sub3 === 'summary') {
+        return makeResult(showIpSlaSummary(state));
+      }
+      if (sub3.startsWith('conf') || sub3 === 'configuration') {
+        const idArg = parseInt(sub4 || '');
+        return makeResult(showIpSlaConfiguration(state, isNaN(idArg) ? undefined : idArg));
+      }
+      // default: show by id or all statistics
+      const idArg2 = parseInt(sub3 || '');
+      if (!isNaN(idArg2)) return makeResult(showIpSlaStatistics(state, idArg2));
+      return makeResult(showIpSlaStatistics(state));
+    }
     return { output: [out(`% Unrecognized show ip subcommand: ${sub2}`, 'error')] };
   }
 
@@ -2750,6 +2907,16 @@ export const showHandler: CommandHandler = (args, state, _raw, _negated) => {
     if (sub2.startsWith('nei') || sub2 === 'neighbors') {
       return makeResult(showCdpNeighbors(state, detail));
     }
+    if (sub2.startsWith('int') || sub2 === 'interface') {
+      const rest = mainArgs.slice(2).join('');
+      if (!rest) return makeResult(showCdpInterface(state));
+      const ifId = resolveInterface(rest, state);
+      return makeResult(showCdpInterface(state, ifId || rest));
+    }
+    if (sub2.startsWith('tra') || sub2 === 'traffic') {
+      return makeResult(showCdpTraffic(state));
+    }
+    if (!sub2) return makeResult(showCdpGlobal(state));
     return makeResult(showCdpNeighbors(state, false));
   }
 
@@ -2876,36 +3043,6 @@ export const showHandler: CommandHandler = (args, state, _raw, _negated) => {
     }
     const servers = sub2 === 'servers';
     return makeResult(showAaa(state, servers));
-  }
-
-  // show ip sla / show ip arp inspection / show ip dhcp snooping
-  // These are handled inside the 'ip' block — we extend it here as alternatives
-  if (sub === 'ip') {
-    if (sub2 === 'sla') {
-      const sub3 = (mainArgs[2] || '').toLowerCase();
-      const sub4 = (mainArgs[3] || '').toLowerCase();
-      if (sub3.startsWith('stat') || sub3 === 'statistics') {
-        const idArg = parseInt(sub4 || '');
-        return makeResult(showIpSlaStatistics(state, isNaN(idArg) ? undefined : idArg));
-      }
-      if (sub3.startsWith('sum') || sub3 === 'summary') {
-        return makeResult(showIpSlaSummary(state));
-      }
-      if (sub3.startsWith('conf') || sub3 === 'configuration') {
-        const idArg = parseInt(sub4 || '');
-        return makeResult(showIpSlaConfiguration(state, isNaN(idArg) ? undefined : idArg));
-      }
-      // default: statistics
-      const idArg2 = parseInt(sub3 || '');
-      if (!isNaN(idArg2)) return makeResult(showIpSlaStatistics(state, idArg2));
-      return makeResult(showIpSlaStatistics(state));
-    }
-    if (sub2 === 'arp' && (mainArgs[2] || '').toLowerCase() === 'inspection') {
-      return makeResult(showIpArpInspection(state));
-    }
-    if (sub2 === 'dhcp' && (mainArgs[2] || '').toLowerCase() === 'snooping' && (mainArgs[3] || '').toLowerCase() === 'binding') {
-      return makeResult(showIpDhcpBinding(state));
-    }
   }
 
   // show storm-control

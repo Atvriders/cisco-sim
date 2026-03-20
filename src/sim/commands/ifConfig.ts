@@ -357,6 +357,15 @@ export const ifConfigHandler: CommandHandler = (args, state, _raw, negated) => {
       return updateIface({});
     }
 
+    if (sub === 'voice') {
+      const sub2 = (args[2] || '').toLowerCase();
+      if (sub2 === 'vlan') {
+        // Voice VLAN - acknowledge without storing (no voiceVlan field in Interface type)
+        return { output: [], newState: { unsavedChanges: true } };
+      }
+      return { output: [out('% Unknown switchport voice subcommand', 'error')] };
+    }
+
     if (sub === 'port-security') {
       const sub2 = (args[2] || '').toLowerCase();
       if (!sub2) {
@@ -404,21 +413,63 @@ export const ifConfigHandler: CommandHandler = (args, state, _raw, negated) => {
       const pri = parseInt(args[2] || '128');
       return updateIface({ spanningTree: { ...iface.spanningTree, priority: pri } });
     }
+    if (sub === 'guard') {
+      // spanning-tree guard root / spanning-tree guard loop
+      return { output: [], newState: { unsavedChanges: true } };
+    }
+    if (sub === 'link-type') {
+      // spanning-tree link-type point-to-point | shared
+      return { output: [], newState: { unsavedChanges: true } };
+    }
     return { output: [out('% Unknown spanning-tree command', 'error')] };
   }
 
   if (cmd === 'channel-group') {
-    if (negated) return updateIface({ channelGroup: undefined });
+    if (negated) {
+      // Remove from portChannels if present
+      const oldNum = iface.channelGroup?.number;
+      if (oldNum !== undefined) {
+        const newPCs = state.portChannels.map(pc => {
+          if (pc.id === `Port-channel${oldNum}`) {
+            return { ...pc, members: pc.members.filter(m => m !== ifId) };
+          }
+          return pc;
+        }).filter(pc => pc.members.length > 0);
+        return {
+          output: [],
+          newState: {
+            interfaces: { ...state.interfaces, [ifId]: { ...iface, channelGroup: undefined } },
+            portChannels: newPCs,
+            unsavedChanges: true
+          }
+        };
+      }
+      return updateIface({ channelGroup: undefined });
+    }
     const num = parseInt(args[1] || '1');
-    const mode = (args[3] || 'on').toLowerCase() as 'active' | 'passive' | 'on';
-    const result = updateIface({ channelGroup: { number: num, mode } });
-    // Emit message only if this is a new port-channel group
+    const rawMode = (args[3] || 'on').toLowerCase();
+    const mode = (['active','passive','on','desirable','auto'].includes(rawMode) ? rawMode : 'on') as 'active' | 'passive' | 'on' | 'desirable' | 'auto';
+    // Determine if this is a new group
     const alreadyExists = Object.values(state.interfaces).some(
       i => i.id !== ifId && i.channelGroup?.number === num
     );
-    if (!alreadyExists && !iface.channelGroup) {
-      result.output = [out(`Creating a port-channel interface Port-channel ${num}`)];
+    const isNew = !alreadyExists && !iface.channelGroup;
+    const cgMode: 'active' | 'passive' | 'on' = (mode === 'active' || mode === 'passive') ? mode : 'on';
+    const result = updateIface({ channelGroup: { number: num, mode: cgMode } });
+    if (isNew) {
+      result.output = [out(`Creating a port-channel interface Port-channel${num}`)];
     }
+    // Update portChannels in state
+    const pcId = `Port-channel${num}`;
+    const proto: 'lacp' | 'pagp' | 'none' = (mode === 'active' || mode === 'passive') ? 'lacp' : (mode === 'desirable' || mode === 'auto') ? 'pagp' : 'none';
+    const existingPC = state.portChannels.find(pc => pc.id === pcId);
+    const updatedPC = existingPC
+      ? { ...existingPC, members: existingPC.members.includes(ifId) ? existingPC.members : [...existingPC.members, ifId], mode: mode as 'active' | 'passive' | 'on' | 'desirable' | 'auto' }
+      : { id: pcId, members: [ifId], protocol: proto as 'lacp' | 'pagp' | 'none', mode: mode as 'active' | 'passive' | 'on' | 'desirable' | 'auto', adminState: 'up' as const, lineState: 'up' as const };
+    result.newState = {
+      ...result.newState,
+      portChannels: [...state.portChannels.filter(pc => pc.id !== pcId), updatedPC]
+    };
     return result;
   }
 
@@ -584,5 +635,94 @@ export const ifConfigHandler: CommandHandler = (args, state, _raw, negated) => {
     return { output: [out(`% Unknown standby subcommand: ${sub}`, 'error')] };
   }
 
-  return { output: [out(`% Unknown interface command: ${args[0] || ''}`, 'error')] };
+  // dot1x per-interface commands
+  if (cmd === 'dot1x') {
+    const sub = (args[1] || '').toLowerCase();
+    if (sub === 'port-control') {
+      return { output: [], newState: { unsavedChanges: true } };
+    }
+    if (sub === 'timeout') {
+      return { output: [], newState: { unsavedChanges: true } };
+    }
+    if (sub === 'max-reauth-req') {
+      return { output: [], newState: { unsavedChanges: true } };
+    }
+    return { output: [], newState: { unsavedChanges: true } };
+  }
+
+  // authentication per-interface commands
+  if (cmd === 'authentication') {
+    const sub = (args[1] || '').toLowerCase();
+    if (sub === 'port-control' || sub === 'host-mode' || sub === 'order' || sub === 'priority') {
+      return { output: [], newState: { unsavedChanges: true } };
+    }
+    return { output: [], newState: { unsavedChanges: true } };
+  }
+
+  // mab (MAC Authentication Bypass)
+  if (cmd === 'mab') {
+    return { output: [], newState: { unsavedChanges: true } };
+  }
+
+  // vrrp per-interface commands
+  if (cmd === 'vrrp') {
+    // vrrp <group> <sub> [args...]
+    // no vrrp <group>
+    return { output: [], newState: { unsavedChanges: true } };
+  }
+
+  // power inline (PoE)
+  if (cmd === 'power') {
+    const sub = (args[1] || '').toLowerCase();
+    if (sub === 'inline') {
+      return { output: [], newState: { unsavedChanges: true } };
+    }
+    return { output: [out('% Unknown power command', 'error')] };
+  }
+
+  // service-policy input|output <policymap>
+  if (cmd === 'service-policy') {
+    const spDir = (args[1] || '').toLowerCase();
+    const spName = args[2];
+    if (spDir === 'input') {
+      if (negated) return updateIface({ servicePolicy: { ...iface.servicePolicy, in: undefined } });
+      if (!spName) return { output: [out('% Incomplete command.', 'error')] };
+      return updateIface({ servicePolicy: { ...iface.servicePolicy, in: spName } });
+    }
+    if (spDir === 'output') {
+      if (negated) return updateIface({ servicePolicy: { ...iface.servicePolicy, out: undefined } });
+      if (!spName) return { output: [out('% Incomplete command.', 'error')] };
+      return updateIface({ servicePolicy: { ...iface.servicePolicy, out: spName } });
+    }
+    return { output: [out('% Unknown service-policy direction', 'error')] };
+  }
+
+  // mls qos trust cos|dscp|ip-precedence
+  if (cmd === 'mls') {
+    const mlsSub = (args[1] || '').toLowerCase();
+    if (mlsSub === 'qos') {
+      const mlsSub2 = (args[2] || '').toLowerCase();
+      if (mlsSub2 === 'trust') {
+        if (negated) return updateIface({ mlsQosTrust: undefined });
+        const trustVal = (args[3] || 'cos').toLowerCase() as 'cos' | 'dscp' | 'ip-precedence';
+        return updateIface({ mlsQosTrust: trustVal });
+      }
+      if (mlsSub2 === 'cos') {
+        if (negated) return updateIface({ mlsQosCos: undefined });
+        return updateIface({ mlsQosCos: parseInt(args[3] || '0') });
+      }
+    }
+    return { output: [out('% Unknown mls command', 'error')] };
+  }
+
+  // cdp enable (per-interface)
+  if (cmd === 'cdp') {
+    const cdpSub = (args[1] || '').toLowerCase();
+    if (cdpSub === 'enable') {
+      return updateIface({ cdpEnabled: !negated });
+    }
+    return { output: [out('% Unknown cdp command', 'error')] };
+  }
+
+    return { output: [out(`% Unknown interface command: ${args[0] || ''}`, 'error')] };
 };

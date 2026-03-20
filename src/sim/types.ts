@@ -89,7 +89,7 @@ export interface Interface {
   portSecurity: PortSecurity;
   ipHelperAddresses: string[];
   ipAccessGroups: { acl: string; direction: 'in' | 'out' }[];
-  channelGroup?: { number: number; mode: 'active' | 'passive' | 'on' };
+  channelGroup?: { number: number; mode: 'active' | 'passive' | 'on' | 'desirable' | 'auto' };
   ospfCost?: number; ospfPriority?: number;
   inputPackets: number; outputPackets: number;
   inputErrors: number; outputErrors: number;
