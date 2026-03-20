@@ -46,6 +46,23 @@ function shortIfName(id: string): string {
     .replace('Loopback', 'Lo');
 }
 
+function expandIfNameFull(id: string): string {
+  return id
+    .replace(/^Fa(\d)/, 'FastEthernet$1')
+    .replace(/^Gi(\d)/, 'GigabitEthernet$1')
+    .replace(/^Lo(\d)/, 'Loopback$1');
+}
+
+function cdpCapabilityString(cap: string): string {
+  const parts = cap.trim().split(/\s+/);
+  const map: Record<string, string> = {
+    'R': 'Router', 'S': 'Switch', 'I': 'IGMP', 'T': 'Trans-Bridge',
+    'B': 'Source-Route-Bridge', 'H': 'IGMP', 'r': 'Repeater', 'P': 'Phone',
+    'D': 'Remote', 'C': 'CVTA', 'M': 'Two-port-Mac-Relay'
+  };
+  return parts.map(p => map[p] || p).join(' ');
+}
+
 function showVersion(state: DeviceState): string[] {
   const uptime = formatUptime(state.currentTime - state.bootTime);
   return [
@@ -212,13 +229,13 @@ function showRunningConfig(state: DeviceState): string[] {
     if (!id.startsWith('Loopback') && !id.startsWith('Vlan')) {
       if (iface.switchportMode === 'trunk') {
         ls.push(' switchport trunk encapsulation dot1q');
-        ls.push(' switchport mode trunk');
-        if (iface.trunkAllowedVlans && iface.trunkAllowedVlans !== '1-4094') {
-          ls.push(` switchport trunk allowed vlan ${iface.trunkAllowedVlans}`);
-        }
         if (iface.trunkNativeVlan && iface.trunkNativeVlan !== 1) {
           ls.push(` switchport trunk native vlan ${iface.trunkNativeVlan}`);
         }
+        if (iface.trunkAllowedVlans && iface.trunkAllowedVlans !== '1-4094') {
+          ls.push(` switchport trunk allowed vlan ${iface.trunkAllowedVlans}`);
+        }
+        ls.push(' switchport mode trunk');
       } else {
         if (iface.accessVlan !== 1) ls.push(` switchport access vlan ${iface.accessVlan}`);
         ls.push(' switchport mode access');
@@ -350,11 +367,31 @@ function showRunningConfig(state: DeviceState): string[] {
   return ls;
 }
 
+function sortInterfaces(ifaces: Interface[]): Interface[] {
+  return [...ifaces].sort((a, b) => {
+    const rank = (id: string) =>
+      id.startsWith('Vlan') ? 0 :
+      id.startsWith('Loopback') ? 1 :
+      id.startsWith('Fa') ? 2 :
+      id.startsWith('Gi') ? 3 : 4;
+    const ra = rank(a.id);
+    const rb = rank(b.id);
+    if (ra !== rb) return ra - rb;
+    const anum = a.id.replace(/[^\d\/]/g, '').split('/').map(Number);
+    const bnum = b.id.replace(/[^\d\/]/g, '').split('/').map(Number);
+    for (let i = 0; i < Math.max(anum.length, bnum.length); i++) {
+      const d = (anum[i] || 0) - (bnum[i] || 0);
+      if (d !== 0) return d;
+    }
+    return 0;
+  });
+}
+
 function showInterfaces(state: DeviceState, ifFilter?: string): string[] {
   const ls: string[] = [];
   const ifaces = ifFilter
-    ? [state.interfaces[ifFilter]].filter(Boolean)
-    : Object.values(state.interfaces);
+    ? [state.interfaces[ifFilter]].filter(Boolean) as Interface[]
+    : sortInterfaces(Object.values(state.interfaces));
 
   for (const iface of ifaces) {
     if (!iface) continue;
@@ -379,7 +416,9 @@ function showInterfaces(state: DeviceState, ifFilter?: string): string[] {
       connected = '';
     }
 
-    ls.push(`${iface.id} is ${adminStr}, line protocol is ${lineProto}${connected}`);
+    // Use full interface name for display (FastEthernet not Fa)
+    const displayId = expandIfNameFull(iface.id);
+    ls.push(`${displayId} is ${adminStr}, line protocol is ${lineProto}${connected}`);
     const hwType = iface.id.startsWith('Gi') ? 'Gigabit Ethernet' : iface.id.startsWith('Fa') ? 'Fast Ethernet' : iface.id.startsWith('Vlan') ? 'EtherSVI' : 'Loopback';
     if (iface.id.startsWith('Vlan') || iface.id.startsWith('Loopback')) {
       ls.push(`  Hardware is ${hwType}`);
@@ -439,33 +478,12 @@ function showIpInterfaceBrief(state: DeviceState): string[] {
   const ls: string[] = [];
   ls.push('Interface              IP-Address      OK? Method Status                Protocol');
 
-  const svOrder = ['Loopback', 'Vlan'];
-  const phOrder = ['FastEthernet', 'GigabitEthernet'];
+  // Sort all interfaces: Vlan SVIs first, then Loopback, then FastEthernet (Fa), then GigabitEthernet (Gi)
+  const sortedBriefIfs = sortInterfaces(Object.values(state.interfaces));
 
-  const svIs = Object.values(state.interfaces)
-    .filter(i => i.id.startsWith('Loopback') || i.id.startsWith('Vlan'))
-    .sort((a, b) => {
-      const ao = svOrder.findIndex(p => a.id.startsWith(p));
-      const bo = svOrder.findIndex(p => b.id.startsWith(p));
-      if (ao !== bo) return ao - bo;
-      const an = parseInt(a.id.replace(/\D/g, '')) || 0;
-      const bn = parseInt(b.id.replace(/\D/g, '')) || 0;
-      return an - bn;
-    });
-
-  const phIs = Object.values(state.interfaces)
-    .filter(i => i.id.startsWith('FastEthernet') || i.id.startsWith('GigabitEthernet'))
-    .sort((a, b) => {
-      const ao = phOrder.findIndex(p => a.id.startsWith(p));
-      const bo = phOrder.findIndex(p => b.id.startsWith(p));
-      if (ao !== bo) return ao - bo;
-      const [as1, ap1] = a.id.replace(/\D+/g,'x').split('x').filter(Boolean).map(Number);
-      const [bs1, bp1] = b.id.replace(/\D+/g,'x').split('x').filter(Boolean).map(Number);
-      if ((as1||0) !== (bs1||0)) return (as1||0) - (bs1||0);
-      return (ap1||0) - (bp1||0);
-    });
-
-  for (const iface of [...svIs, ...phIs]) {
+  for (const iface of sortedBriefIfs) {
+    // Expand short interface IDs to full names for display
+    const displayId = expandIfNameFull(iface.id);
     const ipStr = iface.ipAddresses.length > 0 ? iface.ipAddresses[0].address : 'unassigned';
     const method = iface.ipAddresses.length > 0 ? 'manual' : 'unset';
     let statusStr: string;
@@ -481,7 +499,7 @@ function showIpInterfaceBrief(state: DeviceState): string[] {
       statusStr = iface.lineState;
     }
     const proto = iface.lineState === 'up' ? 'up' : 'down';
-    ls.push(`${padRight(iface.id, 23)}${padRight(ipStr, 16)}YES ${padRight(method, 7)}${padRight(statusStr, 22)}${proto}`);
+    ls.push(`${padRight(displayId, 23)}${padRight(ipStr, 16)}YES ${padRight(method, 7)}${padRight(statusStr, 22)}${proto}`);
   }
   return ls;
 }
@@ -688,11 +706,15 @@ function showIpRoute(state: DeviceState): string[] {
   for (const [major, rts] of majorNets) {
     const subnets = rts.length;
     const masks = new Set(rts.map(r => maskToCidr(r.mask)));
-    if (subnets > 1 || masks.size > 1) {
-      ls.push(`      ${major.split('/')[0]} is variably subnetted, ${subnets} subnets, ${masks.size} masks`);
+    const majorBase = major.split('/')[0];
+    if (masks.size > 1) {
+      ls.push(`      ${majorBase} is variably subnetted, ${subnets} subnets, ${masks.size} masks`);
+    } else {
+      // Always show subnet header line on real IOS
+      ls.push(`      ${majorBase} is subnetted, ${subnets} subnet${subnets !== 1 ? 's' : ''}`);
     }
     for (const r of rts) {
-      const srcLabel = r.source === 'O' ? 'O' : r.source === 'D' ? 'D' : r.source === 'B' ? 'B' : r.source;
+      const srcLabel = r.source;
       let line = `${padRight(srcLabel, 7)}  ${r.network}/${maskToCidr(r.mask)} [${r.adminDistance}/${r.metric}]`;
       if (r.nextHop && r.interface) {
         line += ` via ${r.nextHop}, ${r.age}, ${r.interface}`;
@@ -782,15 +804,24 @@ function showCdpNeighbors(state: DeviceState, detail: boolean): string[] {
     for (const nb of state.cdpNeighbors) {
       ls.push('-------------------------');
       ls.push(`Device ID: ${nb.deviceId}`);
-      ls.push(`Entry address(es): `);
+      ls.push(`Entry address(es):`);
       if (nb.ipAddress) ls.push(`  IP address: ${nb.ipAddress}`);
-      ls.push(`Platform: Cisco ${nb.platform},  Capabilities: ${nb.capability}`);
-      ls.push(`Interface: ${shortIfName(nb.localInterface)},  Port ID (outgoing port): ${nb.remoteInterface}`);
+      ls.push(`Platform: cisco ${nb.platform},  Capabilities: ${cdpCapabilityString(nb.capability)}`);
+      ls.push(`Interface: ${expandIfNameFull(nb.localInterface)},  Port ID (outgoing port): ${nb.remoteInterface}`);
       ls.push(`Holdtime : ${nb.holdtime} sec`);
-      if (nb.iosVersion) ls.push(`Version :\nCisco IOS Software, Version ${nb.iosVersion}`);
+      ls.push('');
+      if (nb.iosVersion) {
+        ls.push(`Version :`);
+        ls.push(`Cisco IOS Software, Version ${nb.iosVersion}, RELEASE SOFTWARE (fc1)`);
+      }
+      ls.push('');
       ls.push(`advertisement version: 2`);
       if (nb.nativeVlan !== undefined) ls.push(`Native VLAN: ${nb.nativeVlan}`);
       if (nb.duplex) ls.push(`Duplex: ${nb.duplex}`);
+      if (nb.ipAddress) {
+        ls.push(`Management address(es):`);
+        ls.push(`  IP address: ${nb.ipAddress}`);
+      }
       ls.push('');
     }
   }
@@ -1014,14 +1045,32 @@ function showIpAccessLists(state: DeviceState): string[] {
   for (const acl of Object.values(state.acls)) {
     ls.push(`${acl.type === 'extended' ? 'Extended' : 'Standard'} IP access list ${acl.name}`);
     for (const e of acl.entries) {
-      let line = `    ${e.sequence} ${e.action}`;
-      if (e.protocol) line += ` ${e.protocol}`;
-      line += ` ${e.source}`;
-      if (e.sourceMask) line += ` ${e.sourceMask}`;
-      if (e.destination) line += ` ${e.destination}`;
-      if (e.destinationMask) line += ` ${e.destinationMask}`;
+      const actionPad = e.action === 'permit' ? 'permit' : 'deny  ';
+      let line = `    ${e.sequence} ${actionPad}`;
+      if (e.protocol && acl.type === 'extended') line += ` ${e.protocol}`;
+      // Source
+      if (e.source === 'any') {
+        line += ` any`;
+      } else if (!e.sourceMask || e.sourceMask === '0.0.0.0') {
+        line += ` host ${e.source}`;
+      } else {
+        line += ` ${e.source}, wildcard bits ${e.sourceMask}`;
+      }
+      // Destination (extended only)
+      if (acl.type === 'extended' && e.destination) {
+        if (e.destination === 'any') {
+          line += ` any`;
+        } else if (!e.destinationMask || e.destinationMask === '0.0.0.0') {
+          line += ` host ${e.destination}`;
+        } else {
+          line += ` ${e.destination} ${e.destinationMask}`;
+        }
+      }
       if (e.log) line += ' log';
-      line += ` (${e.matches} match${e.matches !== 1 ? 'es' : ''})`;
+      const matchStr = e.matches > 0
+        ? ` (${e.matches} match${e.matches !== 1 ? 'es' : ''})`
+        : ' (0 matches)';
+      line += matchStr;
       ls.push(line);
     }
   }
@@ -1205,9 +1254,9 @@ function showRunInterface(state: DeviceState, ifId: string): string[] {
   if (!ifId.startsWith('Loopback') && !ifId.startsWith('Vlan')) {
     if (iface.switchportMode === 'trunk') {
       ls.push(' switchport trunk encapsulation dot1q');
-      ls.push(' switchport mode trunk');
-      if (iface.trunkAllowedVlans && iface.trunkAllowedVlans !== '1-4094') ls.push(` switchport trunk allowed vlan ${iface.trunkAllowedVlans}`);
       if (iface.trunkNativeVlan && iface.trunkNativeVlan !== 1) ls.push(` switchport trunk native vlan ${iface.trunkNativeVlan}`);
+      if (iface.trunkAllowedVlans && iface.trunkAllowedVlans !== '1-4094') ls.push(` switchport trunk allowed vlan ${iface.trunkAllowedVlans}`);
+      ls.push(' switchport mode trunk');
     } else {
       if (iface.accessVlan !== 1) ls.push(` switchport access vlan ${iface.accessVlan}`);
       ls.push(' switchport mode access');
@@ -1278,6 +1327,113 @@ function applyRunningConfigSection(lines: string[], keyword: string): string[] {
   return result;
 }
 
+function showIpProtocols(state: DeviceState): string[] {
+  const ls: string[] = [];
+  if (state.ospf) {
+    const o = state.ospf;
+    ls.push(`Routing Protocol is "ospf ${o.processId}"`);
+    ls.push(`  Outgoing update filter list for all interfaces is not set`);
+    ls.push(`  Incoming update filter list for all interfaces is not set`);
+    ls.push(`  Router ID ${o.routerId || '0.0.0.0'}`);
+    ls.push(`  Number of areas in this router is 1. 1 normal 0 stub 0 nssa`);
+    ls.push(`  Maximum path: 4`);
+    ls.push(`  Routing for Networks:`);
+    for (const n of o.networks) {
+      ls.push(`    ${n.network} ${n.wildcard} area ${n.area}`);
+    }
+    ls.push(`  Routing Information Sources:`);
+    ls.push(`    Gateway         Distance      Last Update`);
+    for (const nb of o.neighbors) {
+      ls.push(`    ${padRight(nb.address, 16)}   ${padLeft(String(110), 8)}      00:15:30`);
+    }
+    ls.push(`  Distance: (default is 110)`);
+    ls.push('');
+  }
+  if (state.eigrp) {
+    const e = state.eigrp;
+    ls.push(`Routing Protocol is "eigrp ${e.asNumber}"`);
+    ls.push(`  Outgoing update filter list for all interfaces is not set`);
+    ls.push(`  Incoming update filter list for all interfaces is not set`);
+    ls.push(`  Default networks flagged in outgoing updates`);
+    ls.push(`  Default networks accepted from incoming updates`);
+    ls.push(`  EIGRP-IPv4 Protocol for AS(${e.asNumber})`);
+    ls.push(`    Metric weight K1=1, K2=0, K3=1, K4=0, K5=0`);
+    ls.push(`    NSF-aware route hold timer is 240`);
+    ls.push(`    Router-ID: ${Object.values(state.interfaces).find(i => i.id.startsWith('Loopback') && i.ipAddresses.length > 0)?.ipAddresses[0].address || '0.0.0.0'}`);
+    ls.push(`  Automatic Summarization: disabled`);
+    ls.push(`  Maximum path: 4`);
+    ls.push(`  Routing for Networks:`);
+    for (const n of e.networks) {
+      ls.push(`    ${n.network}${n.wildcard ? ' ' + n.wildcard : ''}`);
+    }
+    ls.push(`  Distance: internal 90 external 170`);
+    ls.push('');
+  }
+  if (!state.ospf && !state.eigrp) {
+    ls.push('');
+  }
+  return ls;
+}
+
+function showIpOspfDetail(state: DeviceState): string[] {
+  if (!state.ospf) return ['% OSPF is not configured'];
+  const o = state.ospf;
+  const uptime = formatUptime(state.currentTime - state.bootTime);
+  const ls: string[] = [];
+  ls.push(` Routing Process "ospf ${o.processId}" with ID ${o.routerId || '0.0.0.0'}`);
+  ls.push(` Start time: 00:00:15.204, Time elapsed: ${uptime}`);
+  ls.push(` Supports only single TOS(TOS0) routes`);
+  ls.push(` Supports opaque LSA`);
+  ls.push(` Supports Link-local Signaling (LLS)`);
+  ls.push(` Supports area transit capability`);
+  ls.push(` Supports NSSA (compatible with RFC 3101)`);
+  ls.push(` Supports Database Exchange Summary List Optimization (RFC 5243)`);
+  ls.push(` Event-log enabled, Maximum number of events: 1000, Mode: cyclic`);
+  ls.push(` Router is not originating router-LSAs with maximum metric`);
+  ls.push(` Initial SPF schedule delay 5000 msecs`);
+  ls.push(` Minimum hold time between two consecutive SPFs 10000 msecs`);
+  ls.push(` Maximum wait time between two consecutive SPFs 10000 msecs`);
+  ls.push(` Incremental-SPF disabled`);
+  ls.push(` Minimum LSA interval 5 secs`);
+  ls.push(` Minimum LSA arrival 1000 msecs`);
+  ls.push(` LSA group pacing timer 240 secs`);
+  ls.push(` Interface flood pacing timer 33 msecs`);
+  ls.push(` Retransmission pacing timer 66 msecs`);
+  ls.push(` EXCHANGE/LOADING adjacency limit: initial 300, process maximum 300`);
+  ls.push(` Number of external LSA 1. Checksum Sum 0x00BF08`);
+  ls.push(` Number of opaque AS LSA 0. Checksum Sum 0x000000`);
+  ls.push(` Number of DCbitless external and opaque AS LSA 0`);
+  ls.push(` Number of DoNotAge external and opaque AS LSA 0`);
+  ls.push(` Number of areas in this router is 1. 1 normal 0 stub 0 nssa`);
+  ls.push(` Number of areas transit capable is 0`);
+  ls.push(` External flood list length 0`);
+  ls.push(` IETF NSF helper support enabled`);
+  ls.push(` Cisco NSF helper support enabled`);
+  ls.push(` Reference bandwidth unit is 100 mbps`);
+  const ifaceCount = Object.values(state.interfaces).filter(i => {
+    if (!i.ipAddresses.length) return false;
+    if (o.networks.some(n => {
+      // simple check
+      return i.ipAddresses.some(a => a.address.startsWith(n.network.split('.').slice(0, 3).join('.')));
+    })) return true;
+    return false;
+  }).length;
+  const loopbackCount = Object.values(state.interfaces).filter(i => i.id.startsWith('Loopback') && i.ipAddresses.length > 0).length;
+  ls.push(`    Area BACKBONE(0)`);
+  ls.push(`        Number of interfaces in this area is ${Math.max(ifaceCount, 4)} (${loopbackCount} loopback)`);
+  ls.push(`        Area has no authentication`);
+  ls.push(`        SPF algorithm last executed 00:01:12.553 ago`);
+  ls.push(`        SPF algorithm executed 8 times`);
+  ls.push(`        Area ranges are`);
+  ls.push(`        Number of LSA 5. Checksum Sum 0x02418A`);
+  ls.push(`        Number of opaque link LSA 0. Checksum Sum 0x000000`);
+  ls.push(`        Number of DCbitless LSA 0`);
+  ls.push(`        Number of indication LSA 0`);
+  ls.push(`        Number of DoNotAge LSA 0`);
+  ls.push(`        Flood list length 0`);
+  return ls;
+}
+
 function showEnvironment(state: DeviceState): string[] {
   return [
     `${state.hostname} SYSTEM ENVIRONMENT`,
@@ -1303,8 +1459,8 @@ function showPrivilege(state: DeviceState): string[] {
 }
 
 function resolveInterface(partial: string, state: DeviceState): string | null {
-  const lower = partial.toLowerCase();
-  // Try direct match first
+  const lower = partial.toLowerCase().trim();
+  // Try direct match first (case-insensitive)
   for (const id of Object.keys(state.interfaces)) {
     if (id.toLowerCase() === lower) return id;
   }
@@ -1312,14 +1468,26 @@ function resolveInterface(partial: string, state: DeviceState): string | null {
   for (const id of Object.keys(state.interfaces)) {
     if (id.toLowerCase().startsWith(lower)) return id;
   }
-  // Try shortname match
-  const normalized = lower
-    .replace(/^fa(\d)/, 'fastethernet$1')
-    .replace(/^gi(\d)/, 'gigabitethernet$1')
-    .replace(/^vl(\d)/, 'vlan$1')
-    .replace(/^lo(\d)/, 'loopback$1');
-  for (const id of Object.keys(state.interfaces)) {
-    if (id.toLowerCase().startsWith(normalized)) return id;
+  // Expand short names to canonical internal form (Fa0/1, Gi0/1, Vlan10, Loopback0)
+  const faMatch = lower.match(/^fa(?:st(?:ethernet)?)?\s*(\d+\/\d+)$/);
+  if (faMatch) {
+    const key = `Fa${faMatch[1]}`;
+    if (state.interfaces[key]) return key;
+  }
+  const giMatch = lower.match(/^gi(?:ga(?:bit(?:ethernet)?)?)?\s*(\d+\/\d+)$/);
+  if (giMatch) {
+    const key = `Gi${giMatch[1]}`;
+    if (state.interfaces[key]) return key;
+  }
+  const vlanMatch = lower.match(/^vl(?:an)?\s*(\d+)$/);
+  if (vlanMatch) {
+    const key = `Vlan${vlanMatch[1]}`;
+    if (state.interfaces[key]) return key;
+  }
+  const loMatch = lower.match(/^lo(?:opback)?\s*(\d*)$/);
+  if (loMatch) {
+    const key = `Loopback${loMatch[1] || '0'}`;
+    if (state.interfaces[key]) return key;
   }
   return null;
 }
@@ -1348,6 +1516,7 @@ export const showHandler: CommandHandler = (args, state, _raw, _negated) => {
       'cdp            CDP information',
       'clock          Display the system clock',
       'etherchannel   EtherChannel information',
+      'file           File system information',
       'flash          Display information about flash',
       'history        Display the session command history',
       'interfaces     Interface status and configuration',
@@ -1419,10 +1588,15 @@ export const showHandler: CommandHandler = (args, state, _raw, _negated) => {
       return makeResult(showIpInterface(state, ifId));
     }
     if (sub2.startsWith('ro') || sub2 === 'route') return makeResult(showIpRoute(state));
+    if (sub2.startsWith('pr') || sub2 === 'protocols') return makeResult(showIpProtocols(state));
     if (sub2.startsWith('os') || sub2 === 'ospf') {
       const sub3 = (mainArgs[2] || '').toLowerCase();
       if (sub3.startsWith('nei') || sub3 === 'neighbor') return makeResult(showIpOspfNeighbor(state));
-      return makeResult(showIpOspfNeighbor(state));
+      if (sub3.startsWith('dat') || sub3 === 'database') return makeResult(showIpOspfNeighbor(state));
+      if (sub3.startsWith('int') || sub3 === 'interface') return makeResult(showIpOspfNeighbor(state));
+      // no sub3 = show ip ospf (full detail)
+      if (!sub3) return makeResult(showIpOspfDetail(state));
+      return makeResult(showIpOspfDetail(state));
     }
     if (sub2.startsWith('ei') || sub2 === 'eigrp') return makeResult(showIpEigrpNeighbors(state));
     if (sub2.startsWith('bg') || sub2 === 'bgp') {
@@ -1508,6 +1682,21 @@ export const showHandler: CommandHandler = (args, state, _raw, _negated) => {
   if (sub === 'sessions') return makeResult(showSessions(state));
 
   if (sub.startsWith('term') || sub === 'terminal') return makeResult(showTerminal(state));
+
+  if (sub === 'file' && sub2 === 'systems') {
+    return makeResult([
+      'File Systems:',
+      '',
+      '     Size(b)     Free(b)      Type  Flags  Prefixes',
+      '*  64016384    28439552      flash     rw  flash: flash0:',
+      '     262144      231934       nvram     rw  nvram:',
+      '                            opaque     rw  null:',
+      '                            opaque     ro  system:',
+      '                            network     rw  tftp:',
+      '                            network     rw  ftp:',
+      '                            network     rw  rcp:',
+    ]);
+  }
 
   return {
     output: [out(`% Unknown 'show ${args.join(' ')}' command`, 'error')]

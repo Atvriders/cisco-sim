@@ -154,10 +154,12 @@ export const configHandler: CommandHandler = (args, state, raw, negated) => {
         delete newAcls[name];
         return { output: [], newState: { acls: newAcls, unsavedChanges: true } };
       }
-      const newAcl = state.acls[name] || { name, type: aclType === 'extended' ? 'extended' : 'standard', entries: [] };
+      const type = aclType === 'extended' ? 'extended' : 'standard';
+      const newAcl = state.acls[name] || { name, type, entries: [] };
+      // Return to global-config (no dedicated ACL sub-mode in the type system)
       return {
-        output: [],
-        newState: { acls: { ...state.acls, [name]: newAcl }, unsavedChanges: true },
+        output: [out(`ip access-list ${type} ${name}`)],
+        newState: { acls: { ...state.acls, [name]: { ...newAcl, type } }, unsavedChanges: true },
       };
     }
 
@@ -235,6 +237,17 @@ export const configHandler: CommandHandler = (args, state, raw, negated) => {
   }
 
   if (cmd === 'interface') {
+    if (negated) {
+      // no interface Loopback0 removes it; physical interfaces cannot be removed
+      const ifStr = args.slice(1).join('');
+      const ifId = resolveIfFull(ifStr);
+      if (ifId.startsWith('Loopback') || ifId.startsWith('Vlan')) {
+        const newIfaces = { ...state.interfaces };
+        delete newIfaces[ifId];
+        return { output: [], newState: { interfaces: newIfaces, unsavedChanges: true } };
+      }
+      return { output: [out('% Physical interfaces cannot be removed', 'error')] };
+    }
     const rangePart = (args[1] || '').toLowerCase();
     if (rangePart === 'range') {
       const rangeStr = args.slice(2).join('');
@@ -299,6 +312,9 @@ export const configHandler: CommandHandler = (args, state, raw, negated) => {
     const proto = (args[1] || '').toLowerCase();
     if (proto.startsWith('ospf')) {
       const pid = parseInt(args[2] || '1');
+      if (negated) {
+        return { output: [], newState: { ospf: undefined, unsavedChanges: true } };
+      }
       const existing: OspfConfig = state.ospf || {
         processId: pid, networks: [], redistributeConnected: false,
         redistributeStatic: false, defaultInformationOriginate: false,
@@ -313,6 +329,9 @@ export const configHandler: CommandHandler = (args, state, raw, negated) => {
     }
     if (proto.startsWith('eigrp')) {
       const asNum = parseInt(args[2] || '1');
+      if (negated) {
+        return { output: [], newState: { eigrp: undefined, unsavedChanges: true } };
+      }
       const existing: EigrpConfig = state.eigrp || {
         asNumber: asNum, networks: [],
         passiveInterfaces: [], redistributeConnected: false,
@@ -327,6 +346,9 @@ export const configHandler: CommandHandler = (args, state, raw, negated) => {
     }
     if (proto.startsWith('bgp')) {
       const asNum = parseInt(args[2] || '65000');
+      if (negated) {
+        return { output: [], newState: { bgp: undefined, unsavedChanges: true } };
+      }
       const existing: BgpConfig = state.bgp || {
         asNumber: asNum, networks: [], neighbors: []
       };
@@ -342,23 +364,101 @@ export const configHandler: CommandHandler = (args, state, raw, negated) => {
 
   if (cmd === 'access-list') {
     const numOrName = args[1];
-    const action = (args[2] || '').toLowerCase();
     if (!numOrName) return { output: [out('% Incomplete command.', 'error')] };
     if (negated) {
       const newAcls = { ...state.acls };
       delete newAcls[numOrName];
       return { output: [], newState: { acls: newAcls, unsavedChanges: true } };
     }
+    const action = (args[2] || '').toLowerCase();
+    if (action !== 'permit' && action !== 'deny') {
+      return { output: [out('% Incomplete command.', 'error')] };
+    }
     const aclNum = parseInt(numOrName);
     const aclType = (aclNum >= 1 && aclNum <= 99) || (aclNum >= 1300 && aclNum <= 1999) ? 'standard' : 'extended';
     const aclName = numOrName;
     const existing = state.acls[aclName] || { name: aclName, type: aclType, entries: [] };
-    const source = args[3] || 'any';
+    const seq = existing.entries.length * 10 + 10;
+
+    // Parse the entry based on ACL type
+    let argIdx = 3; // start after: access-list <num> permit|deny
+    let protocol: string | undefined;
+    let source = 'any';
+    let sourceMask: string | undefined;
+    let destination: string | undefined;
+    let destinationMask: string | undefined;
+    let logFlag = false;
+
+    if (aclType === 'extended') {
+      // Extended: access-list <num> permit|deny <protocol> <src> <srcwc> <dst> <dstwc> [eq <port>] [log]
+      protocol = (args[argIdx] || 'ip').toLowerCase();
+      argIdx++;
+    }
+
+    // Parse source
+    const srcToken = (args[argIdx] || 'any').toLowerCase();
+    if (srcToken === 'any') {
+      source = 'any';
+      sourceMask = '255.255.255.255';
+      argIdx++;
+    } else if (srcToken === 'host') {
+      source = args[argIdx + 1] || '0.0.0.0';
+      sourceMask = '0.0.0.0';
+      argIdx += 2;
+    } else {
+      source = args[argIdx] || '0.0.0.0';
+      argIdx++;
+      // Next token: wildcard mask or keyword
+      const nextTok = (args[argIdx] || '').toLowerCase();
+      if (nextTok && nextTok !== 'any' && nextTok !== 'host' && nextTok !== 'log' && nextTok !== 'eq' && nextTok.includes('.')) {
+        sourceMask = args[argIdx];
+        argIdx++;
+      } else {
+        sourceMask = '0.0.0.0';
+      }
+    }
+
+    // Parse destination (extended only)
+    if (aclType === 'extended' && argIdx < args.length) {
+      const dstToken = (args[argIdx] || 'any').toLowerCase();
+      if (dstToken === 'any') {
+        destination = 'any';
+        destinationMask = '255.255.255.255';
+        argIdx++;
+      } else if (dstToken === 'host') {
+        destination = args[argIdx + 1] || '0.0.0.0';
+        destinationMask = '0.0.0.0';
+        argIdx += 2;
+      } else if (dstToken && dstToken !== 'log' && dstToken !== 'eq') {
+        destination = args[argIdx];
+        argIdx++;
+        const nextTok = (args[argIdx] || '').toLowerCase();
+        if (nextTok && nextTok !== 'log' && nextTok !== 'eq' && nextTok.includes('.')) {
+          destinationMask = args[argIdx];
+          argIdx++;
+        } else {
+          destinationMask = '0.0.0.0';
+        }
+      }
+    }
+
+    // Check for 'log' keyword anywhere remaining
+    for (let i = argIdx; i < args.length; i++) {
+      if (args[i].toLowerCase() === 'log') { logFlag = true; break; }
+    }
+
     const newEntry = {
-      sequence: existing.entries.length * 10 + 10,
+      sequence: seq,
       action: action as 'permit' | 'deny',
-      source, matches: 0
+      protocol,
+      source,
+      sourceMask,
+      destination,
+      destinationMask,
+      log: logFlag,
+      matches: 0
     };
+
     return {
       output: [],
       newState: {

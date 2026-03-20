@@ -21,7 +21,7 @@ const USER_EXEC_CMDS = [
 const PRIV_EXEC_CMDS = [
   'enable', 'disable', 'exit', 'logout', 'ping', 'traceroute', 'show',
   'configure', 'copy', 'write', 'reload', 'erase', 'debug', 'undebug',
-  'clear', 'clock', 'ssh', 'telnet', 'more', 'terminal', 'do'
+  'clear', 'clock', 'ssh', 'telnet', 'more', 'terminal', 'do', 'dir'
 ];
 const GLOBAL_CONFIG_CMDS = [
   'hostname', 'enable', 'service', 'banner', 'ip', 'ntp', 'logging',

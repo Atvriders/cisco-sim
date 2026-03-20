@@ -154,14 +154,27 @@ export const ifConfigHandler: CommandHandler = (args, state, _raw, negated) => {
   }
 
   if (cmd === 'shutdown') {
+    if (negated) {
+      // no shutdown — bring interface up
+      const connectedPorts = new Set(['Fa0/1', 'Fa0/3', 'Fa0/5', 'Gi0/1', 'Gi0/2']);
+      let newLineState: typeof iface.lineState;
+      if (iface.id.startsWith('Vlan') || iface.id.startsWith('Loopback')) {
+        newLineState = 'up';
+      } else if (connectedPorts.has(iface.id)) {
+        newLineState = 'up';
+      } else {
+        newLineState = 'notconnect';
+      }
+      return updateIface({ adminState: 'up', lineState: newLineState });
+    }
     return updateIface({
       adminState: 'down',
       lineState: 'down'
     });
   }
 
+  // Legacy path: explicit "no shutdown" if args[0]==='no' (shouldn't occur with current dispatcher but kept for safety)
   if (cmd === 'no' && (args[1] || '').toLowerCase() === 'shutdown') {
-    // Ports Fa0/1, Fa0/3, Fa0/5 are "connected" (cable plugged in)
     const connectedPorts = new Set(['Fa0/1', 'Fa0/3', 'Fa0/5', 'Gi0/1', 'Gi0/2']);
     let newLineState: typeof iface.lineState;
     if (iface.id.startsWith('Vlan') || iface.id.startsWith('Loopback')) {

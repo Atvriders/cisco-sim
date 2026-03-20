@@ -158,6 +158,62 @@ export interface NtpConfig {
   referenceServer?: string; stratum: number; offset: number;
 }
 
+export interface DhcpPool {
+  name: string;
+  network: string;
+  mask: string;
+  defaultRouter?: string;
+  dnsServer?: string;
+  domainName?: string;
+  leaseTime: number;
+  excludedAddresses: string[];
+}
+
+export interface DhcpBinding {
+  ip: string;
+  mac: string;
+  hostname?: string;
+  leaseExpiry: string;
+  type: 'Automatic' | 'Manual';
+  state: 'Active' | 'Expired';
+  interface: string;
+}
+
+export interface NatEntry {
+  inside: string;
+  outside: string;
+  insideGlobal: string;
+  outsideGlobal: string;
+  type: 'static' | 'dynamic' | 'pat';
+  protocol?: string;
+  insidePort?: number;
+  outsidePort?: number;
+  age: string;
+}
+
+export interface NatConfig {
+  insideInterfaces: string[];
+  outsideInterfaces: string[];
+  pools: { name: string; startIp: string; endIp: string; prefix: number }[];
+  staticMappings: { localIp: string; globalIp: string; protocol?: string; localPort?: number; globalPort?: number }[];
+  overload: boolean;
+  accessList?: string;
+}
+
+export interface HsrpGroup {
+  interfaceId: string;
+  groupNumber: number;
+  virtualIp: string;
+  priority: number;
+  preempt: boolean;
+  state: 'Active' | 'Standby' | 'Listen' | 'Init';
+  activeRouter: string;
+  standbyRouter: string;
+  helloTime: number;
+  holdTime: number;
+  authentication?: string;
+}
+
 export interface DeviceState {
   hostname: string; domainName: string; banner: string;
   mode: CliMode; modeContext: ModeContext;
@@ -185,6 +241,13 @@ export interface DeviceState {
   activeDebugs: string[];
   terminalLength: number;
   terminalWidth: number;
+  dhcpPools: DhcpPool[];
+  dhcpBindings: DhcpBinding[];
+  dhcpExcludedAddresses: { start: string; end?: string }[];
+  dhcpEnabled: boolean;
+  natConfig: NatConfig;
+  natTranslations: NatEntry[];
+  hsrpGroups: HsrpGroup[];
 }
 
 export interface TerminalLine {

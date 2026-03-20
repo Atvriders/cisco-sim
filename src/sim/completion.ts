@@ -49,7 +49,7 @@ const SHOW_SUBCMDS = [
 ];
 
 const SHOW_IP_SUBCMDS = [
-  'access-lists', 'bgp', 'dhcp', 'eigrp', 'interface', 'ospf', 'route', 'ssh',
+  'access-lists', 'bgp', 'dhcp', 'eigrp', 'interface', 'ospf', 'protocols', 'route', 'ssh',
 ];
 
 const SHOW_IP_INTERFACE_SUBCMDS = ['brief'];

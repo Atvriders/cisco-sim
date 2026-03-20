@@ -1,5 +1,6 @@
 import type { CommandHandler, TerminalLine, DeviceState } from '../types';
 import { showHandler } from './show';
+import { findRoute, pingPermitted } from '../acl';
 
 let _lineId = 2000;
 function lid(): string { return String(_lineId++); }
@@ -7,74 +8,116 @@ function out(text: string, type: TerminalLine['type'] = 'output'): TerminalLine 
   return { id: lid(), type, text };
 }
 
-function isReachable(ip: string, state: DeviceState): boolean {
-  if (ip.startsWith('127.')) return true;
-  if (state.arpTable.some(e => e.address === ip)) return true;
-  // Check if same subnet as any SVI
-  for (const iface of Object.values(state.interfaces)) {
-    if (iface.ipAddresses.length > 0 && iface.lineState === 'up') {
-      const ifIp = iface.ipAddresses[0];
-      if (sameSubnet(ip, ifIp.address, ifIp.mask)) return true;
+function isOwnIp(ip: string, state: DeviceState): boolean {
+  return Object.values(state.interfaces).some(iface =>
+    iface.ipAddresses.some(a => a.address === ip)
+  );
+}
+
+type RouteType = 'direct' | 'ospf' | 'static' | 'unreachable';
+
+function classifyRoute(ip: string, state: DeviceState): RouteType {
+  // Loopback / self
+  if (ip.startsWith('127.')) return 'direct';
+  if (isOwnIp(ip, state)) return 'direct';
+
+  const route = findRoute(ip, state);
+  if (!route) return 'unreachable';
+
+  // Directly connected (no nextHop means same subnet)
+  if (!route.nextHop) return 'direct';
+
+  // Check if the matching route is OSPF
+  const ospfRoute = state.routes.find(r =>
+    r.source === 'O' && r.network !== '0.0.0.0' &&
+    r.interface === route.interface
+  );
+  if (ospfRoute) return 'ospf';
+
+  return 'static';
+}
+
+function pingOutput(ip: string, state: DeviceState): TerminalLine[] {
+  const ls: TerminalLine[] = [];
+  ls.push(out(''));
+  ls.push(out('Type escape sequence to abort.'));
+  ls.push(out(`Sending 5, 100-byte ICMP Echos to ${ip}, timeout is 2 seconds:`));
+
+  // Loopback / own IP always reachable
+  if (ip.startsWith('127.') || isOwnIp(ip, state)) {
+    ls.push(out('!!!!!'));
+    ls.push(out('Success rate is 100 percent (5/5), round-trip min/avg/max = 1/1/1 ms'));
+    ls.push(out(''));
+    return ls;
+  }
+
+  // Check ACL permission
+  if (!pingPermitted(ip, state)) {
+    ls.push(out('.....'));
+    ls.push(out('Success rate is 0 percent (0/5)'));
+    ls.push(out(''));
+    return ls;
+  }
+
+  const routeType = classifyRoute(ip, state);
+  if (routeType === 'unreachable') {
+    ls.push(out('.....'));
+    ls.push(out('Success rate is 0 percent (0/5)'));
+    ls.push(out(''));
+    return ls;
+  }
+
+  ls.push(out('!!!!!'));
+  if (routeType === 'direct') {
+    ls.push(out('Success rate is 100 percent (5/5), round-trip min/avg/max = 1/1/2 ms'));
+  } else if (routeType === 'ospf') {
+    ls.push(out('Success rate is 100 percent (5/5), round-trip min/avg/max = 2/3/5 ms'));
+  } else {
+    ls.push(out('Success rate is 100 percent (5/5), round-trip min/avg/max = 4/8/15 ms'));
+  }
+  ls.push(out(''));
+  return ls;
+}
+
+function tracerouteOutput(ip: string, state: DeviceState): TerminalLine[] {
+  const ls: TerminalLine[] = [];
+  ls.push(out(''));
+  ls.push(out('Type escape sequence to abort.'));
+  ls.push(out(`Tracing the route to ${ip}`));
+  ls.push(out('VRF info: (vrf in name/id, vrf out name/id)'));
+
+  // Loopback / own IP
+  if (ip.startsWith('127.') || isOwnIp(ip, state)) {
+    ls.push(out(`  1 ${ip} 1 msec 1 msec 1 msec`));
+    ls.push(out(''));
+    return ls;
+  }
+
+  const route = findRoute(ip, state);
+
+  if (!route) {
+    // Unreachable — 5 rows of * * *
+    for (let i = 1; i <= 5; i++) {
+      ls.push(out(`  ${i}  *  *  *`));
     }
+    ls.push(out(''));
+    return ls;
   }
-  if (state.routes.some(r => r.network !== '0.0.0.0' && inNetwork(ip, r.network, r.mask))) return true;
-  const defRoute = state.routes.find(r => r.network === '0.0.0.0');
-  return !!defRoute;
-}
 
-function ipToNum(ip: string): number {
-  return ip.split('.').reduce((acc, o) => (acc << 8) + parseInt(o), 0) >>> 0;
-}
-
-function sameSubnet(ip1: string, ip2: string, mask: string): boolean {
-  const m = ipToNum(mask);
-  return (ipToNum(ip1) & m) === (ipToNum(ip2) & m);
-}
-
-function inNetwork(ip: string, network: string, mask: string): boolean {
-  return sameSubnet(ip, network, mask);
-}
-
-function pingOutput(ip: string, reachable: boolean, state: DeviceState): TerminalLine[] {
-  const lines: TerminalLine[] = [];
-  lines.push(out(''));
-  lines.push(out(`Type escape sequence to abort.`));
-  lines.push(out(`Sending 5, 100-byte ICMP Echos to ${ip}, timeout is 2 seconds:`));
-
-  const srcIp = Object.values(state.interfaces)
-    .filter(i => i.ipAddresses.length > 0 && i.lineState === 'up')
-    .map(i => i.ipAddresses[0].address)[0] || '0.0.0.0';
-
-  if (reachable) {
-    lines.push(out('!!!!!'));
-    lines.push(out(`Success rate is 100 percent (5/5), round-trip min/avg/max = 1/2/4 ms`));
+  if (!route.nextHop) {
+    // Directly connected subnet — single hop
+    ls.push(out(`  1 ${ip} 1 msec 1 msec 1 msec`));
   } else {
-    lines.push(out('.....'));
-    lines.push(out(`Success rate is 0 percent (0/5)`));
+    // Via next-hop — show next-hop as hop 1 then unknown hops
+    ls.push(out(`  1 ${route.nextHop} 4 msec 4 msec 4 msec`));
+    ls.push(out(`  2  *  *  *`));
+    ls.push(out(`  3  *  *  *`));
+    ls.push(out(`  4  *  *  *`));
+    ls.push(out(`  5  *  *  *`));
   }
-  lines.push(out(''));
-  void srcIp;
-  return lines;
-}
 
-function tracerouteOutput(ip: string, reachable: boolean, state: DeviceState): TerminalLine[] {
-  const lines: TerminalLine[] = [];
-  lines.push(out(''));
-  lines.push(out(`Type escape sequence to abort.`));
-  lines.push(out(`Tracing the route to ${ip}`));
-  lines.push(out(`VRF info: (vrf in name/id, vrf out name/id)`));
-
-  if (reachable) {
-    const gw = state.defaultGateway || '192.168.1.254';
-    lines.push(out(`  1 ${gw} 2 msec 1 msec 1 msec`));
-    lines.push(out(`  2 ${ip} 3 msec 3 msec 2 msec`));
-  } else {
-    lines.push(out(`  1 * * *`));
-    lines.push(out(`  2 * * *`));
-    lines.push(out(`  3 * * *`));
-  }
-  lines.push(out(''));
-  return lines;
+  ls.push(out(''));
+  return ls;
 }
 
 export const execHandler: CommandHandler = (args, state, raw, _negated) => {
@@ -83,6 +126,14 @@ export const execHandler: CommandHandler = (args, state, raw, _negated) => {
   if (cmd === 'enable') {
     if (state.mode === 'priv-exec') {
       return { output: [out('Already in privileged EXEC mode', 'system')] };
+    }
+    // If an enable secret or password is configured, prompt for it
+    if (state.enableSecret || state.enablePassword) {
+      return {
+        output: [out('Password: ')],
+        pendingInput: 'enable-password',
+        pendingCommand: 'enable'
+      };
     }
     return {
       output: [],
@@ -148,15 +199,13 @@ export const execHandler: CommandHandler = (args, state, raw, _negated) => {
   if (cmd === 'ping') {
     const ip = args[1];
     if (!ip) return { output: [out('% Incomplete command.', 'error')] };
-    const reachable = isReachable(ip, state);
-    return { output: pingOutput(ip, reachable, state) };
+    return { output: pingOutput(ip, state) };
   }
 
   if (cmd === 'traceroute' || cmd === 'tracert') {
     const ip = args[1];
     if (!ip) return { output: [out('% Incomplete command.', 'error')] };
-    const reachable = isReachable(ip, state);
-    return { output: tracerouteOutput(ip, reachable, state) };
+    return { output: tracerouteOutput(ip, state) };
   }
 
   if (cmd === 'clock') {
@@ -192,9 +241,12 @@ export const execHandler: CommandHandler = (args, state, raw, _negated) => {
   if (cmd === 'write') {
     const sub = (args[1] || '').toLowerCase();
     if (!sub || sub.startsWith('mem')) {
+      // Omit startupConfig from the saved copy to prevent circular reference
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { startupConfig: _sc, ...stateWithoutStartup } = state;
       const newState: Partial<DeviceState> = {
         unsavedChanges: false,
-        startupConfig: { ...state }
+        startupConfig: stateWithoutStartup as Omit<DeviceState, 'startupConfig'>
       };
       return {
         output: [out('Building configuration...'), out('[OK]', 'success')],
@@ -230,7 +282,54 @@ export const execHandler: CommandHandler = (args, state, raw, _negated) => {
         pendingCommand: 'copy startup-config running-config'
       };
     }
+    if (src.startsWith('run') && dst.startsWith('tftp')) {
+      return {
+        output: [out('Address or name of remote host []? ')],
+        pendingInput: 'copy-run-tftp-ip',
+        pendingCommand: 'copy running-config tftp'
+      };
+    }
+    if (src.startsWith('tftp') && dst.startsWith('run')) {
+      return {
+        output: [out('Address or name of remote host []? ')],
+        pendingInput: 'copy-tftp-run-ip',
+        pendingCommand: 'copy tftp running-config'
+      };
+    }
     return { output: [out(`% Unrecognized copy command: ${raw}`, 'error')] };
+  }
+
+  if (cmd === 'dir') {
+    const target = (args[1] || '').toLowerCase();
+    if (!target || target.startsWith('flash')) {
+      return {
+        output: [
+          out('Directory of flash:/'),
+          out(''),
+          out('    2  -rwx        1919                   <no date>  private-config.text'),
+          out('    3  -rwx         967                   <no date>  config.text'),
+          out('    4  -rwx       15561                   <no date>  express_setup.debug'),
+          out('    5  -rwx    35574252                   <no date>  c2960x-universalk9-mz.152-7.E6.bin'),
+          out('    6  -rwx        2163                   <no date>  multiple-fs'),
+          out(''),
+          out('64016384 bytes total (28439552 bytes free)'),
+        ]
+      };
+    }
+    if (target.startsWith('nvram')) {
+      return {
+        output: [
+          out('Directory of nvram:/'),
+          out(''),
+          out('  186  -rw-         967                    <no date>  startup-config'),
+          out('  187  ----           5                    <no date>  private-config'),
+          out('  188  -rw-         967                    <no date>  underlying-config'),
+          out(''),
+          out('262144 bytes total (231934 bytes free)'),
+        ]
+      };
+    }
+    return { output: [out(`% Invalid directory specified: ${args[1]}`, 'error')] };
   }
 
   if (cmd === 'erase') {

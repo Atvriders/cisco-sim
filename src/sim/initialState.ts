@@ -1,7 +1,8 @@
 import type {
   DeviceState, Interface, Vlan, MacEntry, ArpEntry, Route,
   SpanningTreeVlan, CdpNeighbor, LineConfig, NtpConfig,
-  SpanningTreePortConfig, PortSecurity
+  SpanningTreePortConfig, PortSecurity, DhcpPool, DhcpBinding,
+  NatConfig, HsrpGroup
 } from './types';
 
 function defaultStp(role: SpanningTreePortConfig['role'] = 'designated', state: SpanningTreePortConfig['state'] = 'forwarding'): SpanningTreePortConfig {
@@ -68,7 +69,7 @@ function makeGi(port: number, opts: Partial<Interface> = {}): Interface {
   };
 }
 
-export function createInitialState(): DeviceState {
+export function createInitialState(savedConfig?: Partial<DeviceState> | null): DeviceState {
   const now = Date.now();
   const bootTime = now - 3600000 * 2; // 2 hours ago
 
@@ -345,7 +346,36 @@ export function createInitialState(): DeviceState {
     stratum: 3, offset: 0.5
   };
 
-  return {
+  const dhcpPools: DhcpPool[] = [
+    { name: 'DATA_POOL', network: '10.10.10.0', mask: '255.255.255.0', defaultRouter: '10.10.10.1', dnsServer: '8.8.8.8', domainName: 'corp.local', leaseTime: 24, excludedAddresses: [] },
+    { name: 'VOICE_POOL', network: '10.20.20.0', mask: '255.255.255.0', defaultRouter: '10.20.20.1', dnsServer: '8.8.8.8', domainName: 'corp.local', leaseTime: 24, excludedAddresses: [] },
+  ];
+
+  const dhcpBindings: DhcpBinding[] = [
+    { ip: '10.10.10.100', mac: '001a.2b3c.4d5e', leaseExpiry: 'Mar 21 2026 12:00 AM', type: 'Automatic', state: 'Active', interface: 'Vlan10' },
+    { ip: '10.10.10.101', mac: '001a.2b3c.4d5f', leaseExpiry: 'Mar 21 2026 12:00 AM', type: 'Automatic', state: 'Active', interface: 'Vlan10' },
+    { ip: '10.20.20.100', mac: '001a.2b3c.4d60', leaseExpiry: 'Mar 21 2026 12:00 AM', type: 'Automatic', state: 'Active', interface: 'Vlan20' },
+  ];
+
+  const natConfig: NatConfig = {
+    insideInterfaces: ['Vlan10', 'Vlan20'],
+    outsideInterfaces: ['GigabitEthernet0/1'],
+    pools: [
+      { name: 'NAT_POOL', startIp: '203.0.113.10', endIp: '203.0.113.20', prefix: 24 },
+    ],
+    staticMappings: [
+      { localIp: '10.10.10.100', globalIp: '203.0.113.10' },
+      { localIp: '10.10.10.101', globalIp: '203.0.113.11' },
+    ],
+    overload: true,
+    accessList: '10',
+  };
+
+  const hsrpGroups: HsrpGroup[] = [
+    { interfaceId: 'Vlan1', groupNumber: 1, virtualIp: '192.168.1.254', priority: 110, preempt: true, state: 'Active', activeRouter: '192.168.1.1', standbyRouter: '192.168.1.2', helloTime: 3, holdTime: 10 },
+  ];
+
+  const base: DeviceState = {
     hostname: 'SW1',
     domainName: 'corp.local',
     banner: 'Authorized access only. All access is logged and monitored.',
@@ -398,6 +428,19 @@ export function createInitialState(): DeviceState {
     terminalLength: 24,
     terminalWidth: 80
   };
+
+  if (savedConfig) {
+    return {
+      ...base,
+      ...savedConfig,
+      mode: 'user-exec',
+      modeContext: { type: 'none' },
+      bootTime: now,
+      currentTime: now,
+    };
+  }
+
+  return base;
 }
 
 export const INITIAL_STATE: DeviceState = createInitialState();

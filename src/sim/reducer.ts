@@ -1,6 +1,7 @@
 import type { DeviceState, SessionState, TerminalLine } from './types';
 import { dispatch } from './commands/dispatcher';
 import { createInitialState } from './initialState';
+import { loadSavedConfig, saveConfig, clearSavedConfig } from './persist';
 import { BOOT_LINES, BOOT_LINE_DELAYS } from './boot';
 import { tabComplete } from './completion';
 
@@ -84,9 +85,9 @@ function updateSession(session: SessionState, result: ReturnType<typeof dispatch
   };
 }
 
-function createSession(id: number, isVty: boolean): SessionState {
+function createSession(id: number, isVty: boolean, savedConfig?: Partial<DeviceState> | null): SessionState {
   const label = isVty ? `VTY ${id - 1}` : 'CON 0';
-  const deviceState = createInitialState();
+  const deviceState = createInitialState(savedConfig);
   return {
     id,
     label,
@@ -98,11 +99,12 @@ function createSession(id: number, isVty: boolean): SessionState {
   };
 }
 
-const initialDeviceState = createInitialState();
+const _savedConfigOnLoad = loadSavedConfig();
+const initialDeviceState = createInitialState(_savedConfigOnLoad);
 
 export function createInitialSimState(): SimState {
   return {
-    sessions: [createSession(0, false)],
+    sessions: [createSession(0, false, _savedConfigOnLoad)],
     activeSessionId: 0,
     booting: true,
     bootLineIndex: 0,
@@ -125,10 +127,12 @@ export function reducer(state: SimState, action: SimAction): SimState {
     }
 
     case 'BOOT_COMPLETE': {
+      const session0 = state.sessions.find(s => s.id === 0);
+      const bannerText = session0?.deviceState?.banner || initialDeviceState.banner;
       const bannerLines: TerminalLine[] = [
         out('', 'system'),
         out('', 'system'),
-        out(initialDeviceState.banner, 'info'),
+        ...bannerText.trim().split('\n').map(line => out(line, 'info')),
         out('', 'system'),
       ];
       const updatedSessions = state.sessions.map(s =>
@@ -149,9 +153,20 @@ export function reducer(state: SimState, action: SimAction): SimState {
         let resultLines: TerminalLine[] = [out(input, 'input')];
         let newDeviceState = session.deviceState;
 
-        if (pendingType === 'copy-run-start') {
+        if (pendingType === 'enable-password') {
+          const enteredPassword = input.trim();
+          const correct = session.deviceState.enableSecret === enteredPassword ||
+            session.deviceState.enablePassword === enteredPassword;
+          if (correct) {
+            newDeviceState = { ...newDeviceState, mode: 'priv-exec' as const };
+            resultLines = [out('', 'output')];
+          } else {
+            resultLines = [out('', 'output'), out('% Access denied', 'error'), out('', 'output')];
+          }
+        } else if (pendingType === 'copy-run-start') {
           const newStartup = { ...session.deviceState };
           newDeviceState = { ...newDeviceState, startupConfig: newStartup, unsavedChanges: false };
+          saveConfig(newDeviceState);
           resultLines = resultLines.concat([
             out('Building configuration...'),
             out('[OK]', 'success'),
@@ -162,14 +177,15 @@ export function reducer(state: SimState, action: SimAction): SimState {
           }
           resultLines = resultLines.concat([out('[OK]', 'success')]);
         } else if (pendingType === 'reload-confirm') {
-          // Trigger reload: go back to booting state
+          // Trigger reload: go back to booting state, respecting saved config
+          const reloadSavedConfig = loadSavedConfig();
           const newSessions2 = state.sessions.map(s => s.id === state.activeSessionId ? {
             ...s,
             lines: [...s.lines, out(input, 'input'), out('', 'system')],
             pendingInput: undefined,
             pendingCommand: undefined,
             booted: false,
-            deviceState: createInitialState(),
+            deviceState: createInitialState(reloadSavedConfig),
           } : s);
           return { ...state, sessions: newSessions2, booting: true, bootLineIndex: 0, currentInput: '' };
         }
@@ -219,6 +235,15 @@ export function reducer(state: SimState, action: SimAction): SimState {
         if (result.newMode) ds = { ...ds, mode: result.newMode };
         if (result.newContext) ds = { ...ds, modeContext: result.newContext };
         updatedSession = { ...updatedSession, deviceState: ds };
+
+        // Persist to localStorage when write memory saves config
+        if (result.newState && result.newState.unsavedChanges === false && result.newState.startupConfig !== undefined) {
+          saveConfig(updatedSession.deviceState);
+        }
+        // Clear localStorage when erase startup-config runs
+        if (result.newState && 'startupConfig' in result.newState && result.newState.startupConfig === undefined) {
+          clearSavedConfig();
+        }
       }
 
       const newSessions = state.sessions.map(s => s.id === state.activeSessionId ? updatedSession : s);
@@ -279,14 +304,16 @@ export function reducer(state: SimState, action: SimAction): SimState {
     case 'NEW_SESSION': {
       if (state.sessions.length >= 5) return state;
       const newId = Math.max(...state.sessions.map(s => s.id)) + 1;
-      const newSession = createSession(newId, true);
-      // New sessions start in booted state with initial prompt
+      const refSession = state.sessions.find(s => s.id === state.activeSessionId) || state.sessions[0];
+      const refBanner = refSession?.deviceState?.banner || initialDeviceState.banner;
+      const newSession = createSession(newId, true, _savedConfigOnLoad);
+      // New sessions start in booted state with banner
       const bootedSession: SessionState = {
         ...newSession,
         booted: true,
         lines: [
           out('', 'system'),
-          out(initialDeviceState.banner, 'info'),
+          ...refBanner.trim().split('\n').map(line => out(line, 'info')),
           out('', 'system'),
         ],
       };
