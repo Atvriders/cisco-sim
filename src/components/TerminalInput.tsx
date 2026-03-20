@@ -132,8 +132,9 @@ export default function TerminalInput({ prompt, value, onChange, onSubmit, onTab
       onChange(newVal);
     } else if (e.key === '?') {
       e.preventDefault();
-      // Show help without submitting — input stays intact
-      onHelp(value);
+      const newValue = value + '?';
+      onChange(newValue);   // put ? in the input box
+      onHelp(value);        // show help based on input before ?
     } else if (e.key === 'c' && e.ctrlKey) {
       e.preventDefault();
       onChange('');
