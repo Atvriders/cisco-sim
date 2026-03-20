@@ -257,6 +257,19 @@ function showRunningConfig(state: DeviceState): string[] {
     }
     if (iface.ospfCost !== undefined) ls.push(` ip ospf cost ${iface.ospfCost}`);
     if (iface.ospfPriority !== undefined) ls.push(` ip ospf priority ${iface.ospfPriority}`);
+    // IPv6 config
+    for (const a of (iface.ipv6Addresses || [])) {
+      if (a.type === 'eui-64') {
+        ls.push(` ipv6 address ${a.address}/${a.prefixLength} eui-64`);
+      } else if (a.type !== 'link-local') {
+        ls.push(` ipv6 address ${a.address}/${a.prefixLength}`);
+      }
+    }
+    if (iface.ipv6Enabled && (iface.ipv6Addresses || []).length === 0) {
+      ls.push(' ipv6 enable');
+    }
+    if (iface.lldpTransmit === false) ls.push(' no lldp transmit');
+    if (iface.lldpReceive === false) ls.push(' no lldp receive');
   }
 
   ls.push('!');
@@ -271,6 +284,15 @@ function showRunningConfig(state: DeviceState): string[] {
       else if (r.interface) ls.push(`ip route ${r.network} ${r.mask} ${r.interface}`);
     }
   }
+
+  // IPv6 global config
+  if (state.ipv6RoutingEnabled) ls.push('ipv6 unicast-routing');
+  for (const r of (state.ipv6Routes || [])) {
+    ls.push(`ipv6 route ${r.network}/${r.prefixLength} ${r.nextHop || r.interface || ''}`);
+  }
+
+  // LLDP global config
+  if (state.lldpEnabled) ls.push('lldp run');
 
   // ACLs
   for (const acl of Object.values(state.acls)) {
@@ -1277,6 +1299,188 @@ function showRunInterface(state: DeviceState, ifId: string): string[] {
   return ls;
 }
 
+function showIpv6InterfaceBrief(state: DeviceState): string[] {
+  const ls: string[] = [];
+  ls.push('Interface                 IPv6 Address/Prefix               State   MTU');
+  const sortedIfs = sortInterfaces(Object.values(state.interfaces));
+  for (const iface of sortedIfs) {
+    const displayId = expandIfNameFull(iface.id);
+    const adminStr = iface.adminState === 'down' ? 'admin down' : iface.lineState === 'up' ? 'up/up' : 'down/down';
+    const addrs = iface.ipv6Addresses || [];
+    const macHex = iface.macAddress.replace(/\./g, '').toUpperCase();
+    const linkLocal = `FE80::${macHex.slice(0,4)}:${macHex.slice(4,8)}:${macHex.slice(8)}/10`;
+    if (addrs.length === 0) {
+      ls.push(`${padRight(displayId, 26)}${padRight('unassigned', 34)}${padRight(adminStr, 8)}${iface.mtu}`);
+    } else {
+      const firstAddr = addrs[0];
+      const addrStr = `${firstAddr.address.toUpperCase()}/${firstAddr.prefixLength} [TEN]`;
+      ls.push(`${padRight(displayId, 26)}${padRight(addrStr, 34)}${padRight(adminStr, 8)}${iface.mtu}`);
+      for (let i = 1; i < addrs.length; i++) {
+        const a = addrs[i];
+        ls.push(`${' '.repeat(26)}${a.address.toUpperCase()}/${a.prefixLength}`);
+      }
+      if (iface.ipv6Enabled) {
+        ls.push(`${' '.repeat(26)}${linkLocal}`);
+      }
+    }
+  }
+  return ls;
+}
+
+function showIpv6Interface(state: DeviceState, ifId: string): string[] {
+  const iface = state.interfaces[ifId];
+  if (!iface) return [`% Interface ${ifId} not found`];
+  const ls: string[] = [];
+  const adminStr = iface.adminState === 'down' ? 'administratively down' : iface.lineState === 'up' ? 'up' : iface.lineState;
+  const proto = iface.lineState === 'up' ? 'up' : 'down';
+  ls.push(`${iface.id} is ${adminStr}, line protocol is ${proto}`);
+  const addrs = iface.ipv6Addresses || [];
+  if (addrs.length === 0 && !iface.ipv6Enabled) {
+    ls.push('  IPv6 is disabled');
+    return ls;
+  }
+  ls.push('  IPv6 is enabled, link-local address is FE80::219:E8FF:FEA2:3C00');
+  ls.push('  No Virtual link-local address(es):');
+  for (const a of addrs) {
+    const typeStr = a.type === 'manual' ? '' : ` [${a.type.toUpperCase()}]`;
+    ls.push(`  Global unicast address(es):`);
+    ls.push(`    ${a.address}, subnet is ${a.address}/${a.prefixLength}${typeStr}`);
+  }
+  ls.push('  Joined group address(es):');
+  ls.push('    FF02::1');
+  ls.push('    FF02::2');
+  ls.push('    FF02::1:FF00:1');
+  ls.push(`  MTU is ${iface.mtu} bytes`);
+  ls.push('  ICMP error messages limited to one every 100 milliseconds');
+  ls.push('  ICMP redirects are enabled');
+  ls.push('  ICMP unreachables are sent');
+  ls.push('  ND DAD is enabled, number of DAD attempts: 1');
+  ls.push('  ND reachable time is 30000 milliseconds (using 30000)');
+  ls.push('  ND advertised reachable time is 0 (unspecified)');
+  ls.push('  ND advertised retransmit interval is 0 (unspecified)');
+  ls.push('  ND router advertisements are sent every 200 seconds');
+  ls.push('  ND router advertisements live for 1800 seconds');
+  ls.push('  ND advertised default router preference is Medium');
+  ls.push('  Hosts use stateless autoconfig for addresses.');
+  return ls;
+}
+
+function showIpv6Route(state: DeviceState): string[] {
+  const ls: string[] = [];
+  const ipv6Routes = state.ipv6Routes || [];
+  ls.push(`IPv6 Routing Table - default - ${ipv6Routes.length + 2} entries`);
+  ls.push('Codes: C - Connected, L - Local, S - Static, U - Per-user Static route');
+  ls.push('       B - BGP, R - RIP, I1 - ISIS L1, I2 - ISIS L2, IA - ISIS interarea');
+  ls.push('       IS - ISIS summary, D - EIGRP, EX - EIGRP external, ND - ND Default');
+  ls.push('       NDp - ND Prefix, DCE - Destination, NDr - Redirect, RL - RPL');
+  ls.push('       O - OSPF Intra, OI - OSPF Inter, OE1 - OSPF ext 1, OE2 - OSPF ext 2');
+  ls.push('       ON1 - OSPF NSSA ext 1, ON2 - OSPF NSSA ext 2, la - LISP site');
+  ls.push('       lA - LISP DLE prefix');
+  ls.push('');
+  for (const iface of Object.values(state.interfaces)) {
+    for (const addr of (iface.ipv6Addresses || [])) {
+      ls.push(`L   ${addr.address.toUpperCase()}/${addr.prefixLength} [0/0]`);
+      ls.push(`     via ${iface.id}, receive`);
+    }
+  }
+  for (const r of ipv6Routes) {
+    ls.push(`${r.source}   ${r.network.toUpperCase()}/${r.prefixLength} [1/0]`);
+    if (r.nextHop) ls.push(`     via ${r.nextHop}`);
+    else if (r.interface) ls.push(`     via ${r.interface}`);
+  }
+  ls.push('L   FF00::/8 [0/0]');
+  ls.push('     via Null0, receive');
+  return ls;
+}
+
+function showIpv6Neighbors(state: DeviceState): string[] {
+  const ls: string[] = [];
+  ls.push('IPv6 Address                              Age Link-layer Addr State Interface');
+  for (const arp of state.arpTable.slice(0, 4)) {
+    const macHex = arp.mac.replace(/\./g, '').slice(0, 4).toUpperCase();
+    const fakeIpv6 = `FE80::${macHex}`;
+    ls.push(`${padRight(fakeIpv6, 42)}${padLeft(String(arp.age), 3)} ${arp.mac}  REACH ${shortIfName(arp.interface)}`);
+  }
+  return ls;
+}
+
+function showLldp(state: DeviceState): string[] {
+  const ls: string[] = [];
+  ls.push('Global LLDP Information:');
+  ls.push(`    Status: ${state.lldpEnabled ? 'ACTIVE' : 'NOT ACTIVE'}`);
+  ls.push('    LLDP advertisements are sent every 30 seconds');
+  ls.push('    LLDP hold time advertised is 120 seconds');
+  ls.push('    LLDP interface reinitialisation delay is 2 seconds');
+  return ls;
+}
+
+function showLldpNeighbors(state: DeviceState, detail: boolean): string[] {
+  const ls: string[] = [];
+  if (!state.lldpEnabled) {
+    ls.push('% LLDP is not enabled');
+    return ls;
+  }
+  const neighbors = state.lldpNeighbors || [];
+  if (!detail) {
+    ls.push('Capability codes:');
+    ls.push('    (R) Router, (B) Bridge, (T) Telephone, (C) DOCSIS Cable Device');
+    ls.push('    (W) WLAN Access Point, (P) Repeater, (S) Station, (O) Other');
+    ls.push('');
+    ls.push('Device ID           Local Intf     Hold-time  Capability      Port ID');
+    for (const nb of neighbors) {
+      const localShort = shortIfName(nb.localInterface);
+      ls.push(`${padRight(nb.deviceId, 20)}${padRight(localShort, 15)}${padLeft(String(nb.holdtime), 9)}  ${padRight(nb.capability, 16)}${nb.portId}`);
+    }
+    ls.push('');
+    ls.push(`Total entries displayed: ${neighbors.length}`);
+  } else {
+    for (const nb of neighbors) {
+      ls.push('------------------------------------------------');
+      ls.push(`Local Intf: ${shortIfName(nb.localInterface)}`);
+      ls.push(`Chassis id: ${nb.deviceId}`);
+      ls.push(`Port id: ${nb.portId}`);
+      ls.push(`Port Description: ${nb.portDescription || ''}`);
+      ls.push(`System Name: ${nb.systemName}`);
+      ls.push('');
+      if (nb.systemDescription) ls.push(`System Description: ${nb.systemDescription}`);
+      ls.push('');
+      ls.push(`Time remaining: ${nb.holdtime} seconds`);
+      ls.push(`System Capabilities: ${nb.capability}`);
+      ls.push(`Enabled Capabilities: ${nb.capability}`);
+      if (nb.managementAddress) {
+        ls.push('Management Addresses:');
+        ls.push(`    IP: ${nb.managementAddress}`);
+      }
+      ls.push('');
+    }
+  }
+  return ls;
+}
+
+function showLldpInterface(state: DeviceState, ifId?: string): string[] {
+  const ls: string[] = [];
+  if (!state.lldpEnabled) {
+    ls.push('% LLDP is not enabled');
+    return ls;
+  }
+  const ifaces = ifId
+    ? ([state.interfaces[ifId]].filter(Boolean) as import('../types').Interface[])
+    : Object.values(state.interfaces).filter(i => i.id.startsWith('Fa') || i.id.startsWith('Gi'));
+
+  for (const iface of ifaces) {
+    if (!iface) continue;
+    const txEnabled = iface.lldpTransmit !== false;
+    const rxEnabled = iface.lldpReceive !== false;
+    ls.push(`${expandIfNameFull(iface.id)}:`);
+    ls.push(`    Tx: ${txEnabled ? 'enabled' : 'disabled'}`);
+    ls.push(`    Rx: ${rxEnabled ? 'enabled' : 'disabled'}`);
+    ls.push('    Tx state: IDLE');
+    ls.push('    Rx state: WAIT FOR FRAME');
+    ls.push('');
+  }
+  return ls;
+}
+
 function applyPipeFilter(lines: string[], pipeArgs: string[]): string[] {
   if (!pipeArgs || pipeArgs.length === 0) return lines;
   const verb = (pipeArgs[0] || '').toLowerCase();
@@ -1679,6 +1883,42 @@ export const showHandler: CommandHandler = (args, state, _raw, _negated) => {
       return makeResult(showCdpNeighbors(state, detail));
     }
     return makeResult(showCdpNeighbors(state, false));
+  }
+
+  if (sub === 'ipv6') {
+    if (sub2.startsWith('int') || sub2 === 'interface') {
+      const sub3 = (mainArgs[2] || '').toLowerCase();
+      if (sub3.startsWith('bri') || sub3 === 'brief' || !sub3) {
+        if (sub3.startsWith('bri') || !mainArgs[2]) return makeResult(showIpv6InterfaceBrief(state));
+        const rest = mainArgs.slice(2).join('');
+        const ifId = resolveInterface(rest, state);
+        if (!ifId) return { output: [out('% Invalid interface', 'error')] };
+        return makeResult(showIpv6Interface(state, ifId));
+      }
+      const rest = mainArgs.slice(2).join('');
+      const ifId = resolveInterface(rest, state);
+      if (!ifId) return makeResult(showIpv6InterfaceBrief(state));
+      return makeResult(showIpv6Interface(state, ifId));
+    }
+    if (sub2.startsWith('ro') || sub2 === 'route') return makeResult(showIpv6Route(state));
+    if (sub2.startsWith('nei') || sub2 === 'neighbors') return makeResult(showIpv6Neighbors(state));
+    return makeResult(showIpv6InterfaceBrief(state));
+  }
+
+  if (sub === 'lldp') {
+    if (sub2.startsWith('nei') || sub2 === 'neighbors') {
+      const sub3 = (mainArgs[2] || '').toLowerCase();
+      const detail = sub3.startsWith('det');
+      return makeResult(showLldpNeighbors(state, detail));
+    }
+    if (sub2.startsWith('int') || sub2 === 'interface') {
+      const rest = mainArgs.slice(2).join('');
+      if (!rest) return makeResult(showLldpInterface(state));
+      const ifId = resolveInterface(rest, state);
+      return makeResult(showLldpInterface(state, ifId || undefined));
+    }
+    // show lldp (no sub) = global info
+    return makeResult(showLldp(state));
   }
 
   if (sub.startsWith('proc') || sub === 'processes') return makeResult(showProcessesCpu(state));

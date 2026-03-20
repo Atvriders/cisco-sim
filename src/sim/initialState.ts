@@ -1,8 +1,9 @@
 import type {
   DeviceState, Interface, Vlan, MacEntry, ArpEntry, Route,
-  SpanningTreeVlan, CdpNeighbor, LineConfig, NtpConfig,
+  SpanningTreeVlan, CdpNeighbor, LldpNeighbor, LineConfig, NtpConfig,
   SpanningTreePortConfig, PortSecurity, DhcpPool, DhcpBinding,
-  NatConfig, HsrpGroup
+  NatConfig, HsrpGroup, VtpConfig, SnmpConfig, AaaConfig, IpSlaEntry, IpSlaSchedule,
+  DhcpSnoopingConfig, DaiConfig, IpSourceGuardBinding
 } from './types';
 
 function defaultStp(role: SpanningTreePortConfig['role'] = 'designated', state: SpanningTreePortConfig['state'] = 'forwarding'): SpanningTreePortConfig {
@@ -28,6 +29,8 @@ function makeFa(port: number, opts: Partial<Interface> = {}): Interface {
     adminState: 'up',
     lineState: 'notconnect',
     ipAddresses: [],
+    ipv6Addresses: [],
+    ipv6Enabled: false,
     macAddress: mac,
     duplex: 'auto', speed: 'auto', mtu: 1500,
     switchportMode: 'access',
@@ -40,6 +43,7 @@ function makeFa(port: number, opts: Partial<Interface> = {}): Interface {
     inputErrors: 0, outputErrors: 0,
     inputBytes: 0, outputBytes: 0,
     lastClear: Date.now(),
+    cdpEnabled: true,
     ...opts
   };
 }
@@ -53,6 +57,8 @@ function makeGi(port: number, opts: Partial<Interface> = {}): Interface {
     adminState: 'up',
     lineState: 'notconnect',
     ipAddresses: [],
+    ipv6Addresses: [],
+    ipv6Enabled: false,
     macAddress: mac,
     duplex: 'full', speed: '1000', mtu: 1500,
     switchportMode: 'access',
@@ -65,6 +71,7 @@ function makeGi(port: number, opts: Partial<Interface> = {}): Interface {
     inputErrors: 0, outputErrors: 0,
     inputBytes: 0, outputBytes: 0,
     lastClear: Date.now(),
+    cdpEnabled: true,
     ...opts
   };
 }
@@ -137,6 +144,8 @@ export function createInitialState(savedConfig?: Partial<DeviceState> | null): D
     description: 'Router-ID-Loopback',
     adminState: 'up', lineState: 'up',
     ipAddresses: [{ address: '1.1.1.1', mask: '255.255.255.255' }],
+    ipv6Addresses: [{ address: '2001:db8::1', prefixLength: 128, type: 'manual' as const }],
+    ipv6Enabled: true,
     macAddress: '0019.e8a2.3c00',
     duplex: 'full', speed: 'auto', mtu: 1514,
     switchportMode: 'access',
@@ -145,7 +154,8 @@ export function createInitialState(savedConfig?: Partial<DeviceState> | null): D
     portSecurity: defaultPortSec(),
     ipHelperAddresses: [], ipAccessGroups: [],
     inputPackets: 5234, outputPackets: 5234, inputErrors: 0, outputErrors: 0,
-    inputBytes: 418720, outputBytes: 418720, lastClear: bootTime
+    inputBytes: 418720, outputBytes: 418720, lastClear: bootTime,
+    cdpEnabled: true,
   };
 
   // VLAN SVIs
@@ -154,6 +164,7 @@ export function createInitialState(savedConfig?: Partial<DeviceState> | null): D
     description: 'Management-VLAN',
     adminState: 'up', lineState: 'up',
     ipAddresses: [{ address: '192.168.1.1', mask: '255.255.255.0' }],
+    ipv6Addresses: [], ipv6Enabled: false,
     macAddress: '0019.e8a2.3c0a',
     duplex: 'full', speed: 'auto', mtu: 1500,
     switchportMode: 'access',
@@ -162,13 +173,15 @@ export function createInitialState(savedConfig?: Partial<DeviceState> | null): D
     portSecurity: defaultPortSec(),
     ipHelperAddresses: [], ipAccessGroups: [],
     inputPackets: 48291, outputPackets: 52104, inputErrors: 0, outputErrors: 0,
-    inputBytes: 6278830, outputBytes: 6773520, lastClear: bootTime
+    inputBytes: 6278830, outputBytes: 6773520, lastClear: bootTime,
+    cdpEnabled: true,
   };
   interfaces['Vlan10'] = {
     id: 'Vlan10', slot: 0, port: 0,
     description: 'DATA-VLAN-SVI',
     adminState: 'up', lineState: 'up',
     ipAddresses: [{ address: '10.10.10.1', mask: '255.255.255.0' }],
+    ipv6Addresses: [], ipv6Enabled: false,
     macAddress: '0019.e8a2.3c0b',
     duplex: 'full', speed: 'auto', mtu: 1500,
     switchportMode: 'access',
@@ -177,13 +190,15 @@ export function createInitialState(savedConfig?: Partial<DeviceState> | null): D
     portSecurity: defaultPortSec(),
     ipHelperAddresses: ['192.168.1.254'], ipAccessGroups: [],
     inputPackets: 234891, outputPackets: 287432, inputErrors: 0, outputErrors: 0,
-    inputBytes: 30535830, outputBytes: 37366160, lastClear: bootTime
+    inputBytes: 30535830, outputBytes: 37366160, lastClear: bootTime,
+    cdpEnabled: true,
   };
   interfaces['Vlan20'] = {
     id: 'Vlan20', slot: 0, port: 0,
     description: 'VOICE-VLAN-SVI',
     adminState: 'up', lineState: 'up',
     ipAddresses: [{ address: '10.20.20.1', mask: '255.255.255.0' }],
+    ipv6Addresses: [], ipv6Enabled: false,
     macAddress: '0019.e8a2.3c0c',
     duplex: 'full', speed: 'auto', mtu: 1500,
     switchportMode: 'access',
@@ -192,13 +207,15 @@ export function createInitialState(savedConfig?: Partial<DeviceState> | null): D
     portSecurity: defaultPortSec(),
     ipHelperAddresses: ['192.168.1.254'], ipAccessGroups: [],
     inputPackets: 128492, outputPackets: 143821, inputErrors: 0, outputErrors: 0,
-    inputBytes: 16703960, outputBytes: 18696730, lastClear: bootTime
+    inputBytes: 16703960, outputBytes: 18696730, lastClear: bootTime,
+    cdpEnabled: true,
   };
   interfaces['Vlan30'] = {
     id: 'Vlan30', slot: 0, port: 0,
     description: 'MGMT-VLAN-SVI',
     adminState: 'up', lineState: 'up',
     ipAddresses: [{ address: '10.30.30.1', mask: '255.255.255.0' }],
+    ipv6Addresses: [], ipv6Enabled: false,
     macAddress: '0019.e8a2.3c0d',
     duplex: 'full', speed: 'auto', mtu: 1500,
     switchportMode: 'access',
@@ -207,7 +224,8 @@ export function createInitialState(savedConfig?: Partial<DeviceState> | null): D
     portSecurity: defaultPortSec(),
     ipHelperAddresses: [], ipAccessGroups: [],
     inputPackets: 34821, outputPackets: 38294, inputErrors: 0, outputErrors: 0,
-    inputBytes: 4526730, outputBytes: 4978220, lastClear: bootTime
+    inputBytes: 4526730, outputBytes: 4978220, lastClear: bootTime,
+    cdpEnabled: true,
   };
 
   const vlans: Record<number, Vlan> = {
@@ -321,6 +339,30 @@ export function createInitialState(savedConfig?: Partial<DeviceState> | null): D
     }
   ];
 
+  const lldpNeighbors: LldpNeighbor[] = [
+    {
+      deviceId: 'CORE-SW1', localInterface: 'Gi0/1', holdtime: 120,
+      capability: 'R, B', systemName: 'CORE-SW1', portId: 'Gi1/0/24',
+      portDescription: 'GigabitEthernet1/0/24',
+      systemDescription: 'Cisco IOS Software, Catalyst 3850',
+      managementAddress: '192.168.1.254'
+    },
+    {
+      deviceId: 'CORE-SW2', localInterface: 'Gi0/2', holdtime: 120,
+      capability: 'R, B', systemName: 'CORE-SW2', portId: 'Gi1/0/24',
+      portDescription: 'GigabitEthernet1/0/24',
+      systemDescription: 'Cisco IOS Software, Catalyst 3850',
+      managementAddress: '192.168.1.253'
+    },
+    {
+      deviceId: 'AP-FLOOR2', localInterface: 'Fa0/5', holdtime: 120,
+      capability: 'W', systemName: 'AP-FLOOR2', portId: 'Fa0',
+      portDescription: 'FastEthernet0',
+      systemDescription: 'Cisco Aironet Access Point',
+      managementAddress: '10.20.20.50'
+    }
+  ];
+
   const lines: LineConfig[] = [
     {
       line: 'console', start: 0, end: 0,
@@ -416,6 +458,10 @@ export function createInitialState(savedConfig?: Partial<DeviceState> | null): D
     lines,
     cdpEnabled: true,
     cdpNeighbors,
+    lldpEnabled: true,
+    lldpNeighbors,
+    ipv6RoutingEnabled: false,
+    ipv6Routes: [],
     ntp,
     loggingEnabled: true,
     loggingServer: '192.168.1.200',
@@ -426,7 +472,91 @@ export function createInitialState(savedConfig?: Partial<DeviceState> | null): D
     currentTime: now,
     activeDebugs: [],
     terminalLength: 24,
-    terminalWidth: 80
+    terminalWidth: 80,
+    dhcpPools,
+    dhcpBindings,
+    dhcpExcludedAddresses: [
+      { start: '10.10.10.1', end: '10.10.10.10' },
+      { start: '10.20.20.1', end: '10.20.20.10' },
+    ],
+    dhcpEnabled: true,
+    natConfig,
+    natTranslations: [
+      { inside: '10.10.10.100', outside: '---', insideGlobal: '203.0.113.10', outsideGlobal: '---', type: 'static', age: '' },
+      { inside: '10.10.10.101', outside: '---', insideGlobal: '203.0.113.11', outsideGlobal: '---', type: 'static', age: '' },
+      { inside: '10.10.10.100', outside: '8.8.8.8', insideGlobal: '203.0.113.10:1024', outsideGlobal: '8.8.8.8:1024', type: 'pat', protocol: 'icmp', insidePort: 1024, outsidePort: 1024, age: '00:01:00' },
+    ],
+    hsrpGroups,
+    vtp: {
+      domain: 'CORP',
+      mode: 'server',
+      version: 2,
+      pruningEnabled: false,
+      configRevision: 14,
+      updatedBy: 'admin@192.168.1.1',
+      updatedAt: '12:35:01 UTC Fri Mar 20 2026',
+    },
+    snmp: {
+      communities: [
+        { name: 'public', access: 'ro' },
+        { name: 'private', access: 'rw' },
+      ],
+      location: 'Server Room A, Rack 3',
+      contact: 'netadmin@corp.local',
+      trapHosts: [{ ip: '192.168.1.200', community: 'public', version: '2c' as const }],
+      enabled: true,
+    },
+    cdpTimer: 60,
+    cdpHoldtime: 180,
+    qosEnabled: false,
+    classMaps: [],
+    policyMaps: [],
+    spanSessions: [],
+    portChannels: [],
+    aaa: {
+      newModel: false,
+      authenticationLists: [],
+      authorizationLists: [],
+      accountingLists: [],
+      radiusServers: [],
+      tacacsServers: [],
+    },
+    ipSla: [
+      { id: 1, type: 'icmp-echo' as const, target: '192.168.1.254', frequency: 60, timeout: 5000, threshold: 3000, tag: 'UPLINK-CHECK',
+        history: [
+          { roundTripTime: 2, success: true, timestamp: '15:29:01.123 UTC' },
+          { roundTripTime: 3, success: true, timestamp: '15:30:01.123 UTC' },
+          { roundTripTime: 2, success: true, timestamp: '15:31:01.123 UTC' },
+        ]
+      },
+      { id: 2, type: 'icmp-echo' as const, target: '8.8.8.8', frequency: 60, timeout: 5000, threshold: 5000, tag: 'INTERNET-CHECK',
+        history: [
+          { roundTripTime: 12, success: true, timestamp: '15:29:01.456 UTC' },
+          { roundTripTime: 11, success: true, timestamp: '15:30:01.456 UTC' },
+          { roundTripTime: 14, success: true, timestamp: '15:31:01.456 UTC' },
+        ]
+      },
+    ] satisfies IpSlaEntry[],
+    ipSlaSchedules: [
+      { id: 1, startTime: 'now', life: 'forever' as const, recurring: true },
+      { id: 2, startTime: 'now', life: 'forever' as const, recurring: true },
+    ] satisfies IpSlaSchedule[],
+    dhcpSnooping: { enabled: false, vlans: [], option82: true, trustedPorts: ['Gi0/1', 'Gi0/2'], rateLimits: [] },
+    dai: { enabled: false, vlans: [], trustedPorts: ['Gi0/1', 'Gi0/2'], logging: true },
+    ipSourceGuardBindings: [],
+    stpMode: 'rapid-pvst' as const,
+    mstConfig: {
+      name: 'CORP-MST',
+      revision: 1,
+      instances: [
+        { id: 0, vlans: [1, 30, 99], rootBridgeMac: '0019.e8a2.3c00', rootBridgePriority: 32768, localBridgePriority: 32768, rootCost: 0 },
+        { id: 1, vlans: [10, 20], rootBridgeMac: '0019.e8a2.3c00', rootBridgePriority: 24576, localBridgePriority: 24576, rootCost: 0 },
+      ],
+    },
+    stpPortfastDefault: false,
+    stpBpduguardDefault: false,
+    stpLoopguardDefault: false,
+    stpBackbonefast: false,
   };
 
   if (savedConfig) {

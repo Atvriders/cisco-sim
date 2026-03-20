@@ -24,14 +24,14 @@ const PRIV_EXEC_CMDS = [
   'clear', 'clock', 'ssh', 'telnet', 'more', 'terminal', 'do', 'dir'
 ];
 const GLOBAL_CONFIG_CMDS = [
-  'hostname', 'enable', 'service', 'banner', 'ip', 'ntp', 'logging',
+  'hostname', 'enable', 'service', 'banner', 'ip', 'ipv6', 'ntp', 'logging',
   'username', 'vlan', 'interface', 'line', 'router', 'access-list',
-  'spanning-tree', 'crypto', 'cdp', 'end', 'exit', 'do', 'no',
+  'spanning-tree', 'crypto', 'cdp', 'lldp', 'end', 'exit', 'do', 'no',
   'snmp-server', 'clock', 'default'
 ];
 const IF_CONFIG_CMDS = [
-  'description', 'ip', 'shutdown', 'no', 'duplex', 'speed', 'mtu',
-  'switchport', 'spanning-tree', 'channel-group', 'storm-control',
+  'description', 'ip', 'ipv6', 'shutdown', 'no', 'duplex', 'speed', 'mtu',
+  'switchport', 'spanning-tree', 'channel-group', 'storm-control', 'lldp',
   'end', 'exit', 'do'
 ];
 const VLAN_CONFIG_CMDS = ['name', 'state', 'no', 'end', 'exit'];

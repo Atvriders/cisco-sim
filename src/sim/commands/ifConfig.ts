@@ -347,5 +347,42 @@ export const ifConfigHandler: CommandHandler = (args, state, _raw, negated) => {
     return { output: [] };
   }
 
+  if (cmd === 'ipv6') {
+    const sub = (args[1] || '').toLowerCase();
+    if (sub === 'address') {
+      if (negated) {
+        return updateIface({ ipv6Addresses: [], ipv6Enabled: false });
+      }
+      const addrArg = args[2]; // e.g. "2001:db8::1/64"
+      if (!addrArg) return { output: [out('% Incomplete command.', 'error')] };
+      const isEui64 = (args[3] || '').toLowerCase() === 'eui-64';
+      const slashIdx = addrArg.lastIndexOf('/');
+      const address = slashIdx >= 0 ? addrArg.slice(0, slashIdx) : addrArg;
+      const prefixLength = slashIdx >= 0 ? parseInt(addrArg.slice(slashIdx + 1)) : 64;
+      const type = isEui64 ? 'eui-64' as const : 'manual' as const;
+      const newAddr = { address, prefixLength, type };
+      const existing = (iface.ipv6Addresses || []).filter(a => a.type !== 'link-local');
+      return updateIface({ ipv6Addresses: [...existing, newAddr], ipv6Enabled: true });
+    }
+    if (sub === 'enable') {
+      if (negated) {
+        return updateIface({ ipv6Enabled: false });
+      }
+      return updateIface({ ipv6Enabled: true });
+    }
+    return { output: [out(`% Unknown ipv6 subcommand: ${sub}`, 'error')] };
+  }
+
+  if (cmd === 'lldp') {
+    const sub = (args[1] || '').toLowerCase();
+    if (sub === 'transmit') {
+      return updateIface({ lldpTransmit: !negated });
+    }
+    if (sub === 'receive') {
+      return updateIface({ lldpReceive: !negated });
+    }
+    return { output: [out('% Unknown lldp command', 'error')] };
+  }
+
   return { output: [out(`% Unknown interface command: ${args[0] || ''}`, 'error')] };
 };

@@ -1,3 +1,22 @@
+export type StpMode = 'pvst' | 'rapid-pvst' | 'mst';
+
+export interface MstInstance {
+  id: number;           // 0-4094
+  name?: string;
+  vlans: number[];      // VLANs mapped to this instance
+  rootBridgeMac: string;
+  rootBridgePriority: number;
+  localBridgePriority: number;
+  rootPort?: string;
+  rootCost: number;
+}
+
+export interface MstConfig {
+  name: string;
+  revision: number;
+  instances: MstInstance[];
+}
+
 export type CliMode =
   | 'user-exec'
   | 'priv-exec'
@@ -24,6 +43,24 @@ export type DuplexMode = 'auto' | 'full' | 'half';
 export type SpeedSetting = 'auto' | '10' | '100' | '1000';
 
 export interface IpAddress { address: string; mask: string; secondary?: boolean; }
+
+export interface IPv6Address {
+  address: string;       // "2001:db8::1"
+  prefixLength: number;  // 64
+  type: 'manual' | 'eui-64' | 'link-local' | 'anycast';
+}
+
+export interface LldpNeighbor {
+  deviceId: string;
+  localInterface: string;
+  holdtime: number;
+  capability: string;
+  systemName: string;
+  portId: string;
+  portDescription?: string;
+  systemDescription?: string;
+  managementAddress?: string;
+}
 
 export interface SpanningTreePortConfig {
   portfast: boolean; bpduguard: boolean; bpdufilter: boolean;
@@ -59,6 +96,14 @@ export interface Interface {
   inputBytes: number; outputBytes: number;
   lastClear: number;
   broadcastLevel?: number;
+  ipv6Addresses: IPv6Address[];
+  ipv6Enabled: boolean;
+  lldpTransmit?: boolean;
+  lldpReceive?: boolean;
+  servicePolicy?: { in?: string; out?: string };
+  cdpEnabled: boolean;
+  mlsQosTrust?: 'cos' | 'dscp' | 'ip-precedence';
+  mlsQosCos?: number;
 }
 
 export interface Vlan {
@@ -156,6 +201,30 @@ export interface LineConfig {
 export interface NtpConfig {
   servers: string[]; synchronized: boolean;
   referenceServer?: string; stratum: number; offset: number;
+  master?: boolean; masterStratum?: number;
+  authenticate?: boolean;
+  authKeys?: { id: number; type: 'md5'; key: string }[];
+  trustedKeys?: number[];
+  source?: string;
+}
+
+export interface VtpConfig {
+  domain: string;
+  mode: 'server' | 'client' | 'transparent' | 'off';
+  version: 1 | 2 | 3;
+  password?: string;
+  pruningEnabled: boolean;
+  configRevision: number;
+  updatedBy: string;
+  updatedAt: string;
+}
+
+export interface SnmpConfig {
+  communities: { name: string; access: 'ro' | 'rw'; acl?: string }[];
+  location?: string;
+  contact?: string;
+  trapHosts: { ip: string; community: string; version: '1' | '2c' | '3' }[];
+  enabled: boolean;
 }
 
 export interface DhcpPool {
@@ -214,6 +283,94 @@ export interface HsrpGroup {
   authentication?: string;
 }
 
+export interface QosClassMap {
+  name: string;
+  matchType: 'access-group' | 'dscp' | 'cos' | 'ip-precedence' | 'any';
+  matchValue?: string;
+}
+
+export interface QosPolicyClass {
+  classMapName: string;
+  police?: { rate: number; burstNormal: number; burstExcess: number; exceedAction: string };
+  priority?: number;
+  bandwidth?: number;
+  set?: { field: string; value: string };
+}
+
+export interface QosPolicyMap {
+  name: string;
+  classes: QosPolicyClass[];
+}
+
+export interface SpanSession {
+  id: number;
+  type: 'local' | 'rspan';
+  sourcePorts: { port: string; direction: 'rx' | 'tx' | 'both' }[];
+  sourceVlans?: number[];
+  destination?: string;
+  filter?: string;
+}
+
+export interface PortChannelInterface {
+  id: string;           // "Port-channel1"
+  members: string[];    // ["Fa0/1", "Fa0/2"]
+  protocol: 'lacp' | 'pagp' | 'none';
+  mode: 'active' | 'passive' | 'on' | 'desirable' | 'auto';
+  adminState: 'up' | 'down';
+  lineState: 'up' | 'down';
+}
+
+export interface AaaConfig {
+  newModel: boolean;
+  authenticationLists: { name: string; methods: string[] }[];
+  authorizationLists: { name: string; type: string; methods: string[] }[];
+  accountingLists: { name: string; type: string; methods: string[] }[];
+  radiusServers: { ip: string; authPort: number; acctPort: number; key: string }[];
+  tacacsServers: { ip: string; key: string }[];
+}
+
+export interface IpSlaEntry {
+  id: number;
+  type: 'icmp-echo' | 'udp-jitter' | 'http' | 'dns';
+  target: string;
+  sourceInterface?: string;
+  frequency: number;    // seconds
+  timeout: number;
+  threshold: number;
+  tag?: string;
+  history: { roundTripTime: number; success: boolean; timestamp: string }[];
+}
+
+export interface IpSlaSchedule {
+  id: number;
+  startTime: 'now' | string;
+  life: 'forever' | number;
+  recurring: boolean;
+}
+
+export interface DhcpSnoopingConfig {
+  enabled: boolean;
+  vlans: number[];
+  option82: boolean;
+  trustedPorts: string[];  // interface IDs
+  rateLimits: { port: string; pps: number }[];
+}
+
+export interface DaiConfig {
+  enabled: boolean;
+  vlans: number[];
+  trustedPorts: string[];
+  logging: boolean;
+}
+
+export interface IpSourceGuardBinding {
+  ip: string;
+  mac: string;
+  vlan: number;
+  interface: string;
+  type: 'dhcp-snooping' | 'static';
+}
+
 export interface DeviceState {
   hostname: string; domainName: string; banner: string;
   mode: CliMode; modeContext: ModeContext;
@@ -232,6 +389,9 @@ export interface DeviceState {
   cryptoKeyRsa?: { modulus: number; generated: string };
   lines: LineConfig[];
   cdpEnabled: boolean; cdpNeighbors: CdpNeighbor[];
+  lldpEnabled: boolean; lldpNeighbors: LldpNeighbor[];
+  ipv6RoutingEnabled: boolean;
+  ipv6Routes: { source: string; network: string; prefixLength: number; nextHop?: string; interface?: string; age: string }[];
   ntp: NtpConfig;
   loggingEnabled: boolean; loggingServer?: string;
   loggingBuffer: string[]; syslogLevel: number;
@@ -248,6 +408,27 @@ export interface DeviceState {
   natConfig: NatConfig;
   natTranslations: NatEntry[];
   hsrpGroups: HsrpGroup[];
+  vtp: VtpConfig;
+  snmp: SnmpConfig;
+  cdpTimer: number;
+  cdpHoldtime: number;
+  qosEnabled: boolean;
+  classMaps: QosClassMap[];
+  policyMaps: QosPolicyMap[];
+  spanSessions: SpanSession[];
+  portChannels: PortChannelInterface[];
+  aaa: AaaConfig;
+  ipSla: IpSlaEntry[];
+  ipSlaSchedules: IpSlaSchedule[];
+  dhcpSnooping: DhcpSnoopingConfig;
+  dai: DaiConfig;
+  ipSourceGuardBindings: IpSourceGuardBinding[];
+  stpMode: StpMode;
+  mstConfig: MstConfig;
+  stpPortfastDefault: boolean;
+  stpBpduguardDefault: boolean;
+  stpLoopguardDefault: boolean;
+  stpBackbonefast: boolean;
 }
 
 export interface TerminalLine {

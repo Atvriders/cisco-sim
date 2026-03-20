@@ -176,6 +176,47 @@ export function reducer(state: SimState, action: SimAction): SimState {
             newDeviceState = { ...session.deviceState.startupConfig as DeviceState, startupConfig: session.deviceState.startupConfig };
           }
           resultLines = resultLines.concat([out('[OK]', 'success')]);
+        } else if (pendingType === 'copy-run-tftp-ip') {
+          // Got the IP; ask for filename
+          const tftpIp = input.trim() || '192.168.1.254';
+          const updatedSessionTftp: SessionState = {
+            ...session,
+            lines: [...session.lines, ...resultLines, out(`Destination filename [${session.deviceState.hostname}-confg]? `)],
+            pendingInput: 'copy-run-tftp-file',
+            pendingCommand: tftpIp,
+          };
+          const newSessionsTftp = state.sessions.map(s => s.id === state.activeSessionId ? updatedSessionTftp : s);
+          return { ...state, sessions: newSessionsTftp, currentInput: '' };
+        } else if (pendingType === 'copy-run-tftp-file') {
+          const tftpIp = session.pendingCommand || '192.168.1.254';
+          const filename = input.trim() || `${session.deviceState.hostname}-confg`;
+          resultLines = resultLines.concat([
+            out(`!!`),
+            out(`1234 bytes copied in 0.123 secs (10032 bytes/sec)`),
+          ]);
+          void tftpIp;
+          void filename;
+        } else if (pendingType === 'copy-tftp-run-ip') {
+          // Got the IP; ask for filename
+          const tftpIp2 = input.trim() || '192.168.1.254';
+          const updatedSessionTftp2: SessionState = {
+            ...session,
+            lines: [...session.lines, ...resultLines, out(`Source filename []? `)],
+            pendingInput: 'copy-tftp-run-file',
+            pendingCommand: tftpIp2,
+          };
+          const newSessionsTftp2 = state.sessions.map(s => s.id === state.activeSessionId ? updatedSessionTftp2 : s);
+          return { ...state, sessions: newSessionsTftp2, currentInput: '' };
+        } else if (pendingType === 'copy-tftp-run-file') {
+          const tftpIp3 = session.pendingCommand || '192.168.1.254';
+          const filename3 = input.trim() || `${session.deviceState.hostname}-confg`;
+          resultLines = resultLines.concat([
+            out(`Accessing tftp://${tftpIp3}/${filename3}...`),
+            out(`Loading ${filename3} from ${tftpIp3} (via Vlan1): !`),
+            out(`[OK - 1234 bytes]`),
+          ]);
+          // Mark as unsaved since we "imported" a config
+          newDeviceState = { ...newDeviceState, unsavedChanges: true };
         } else if (pendingType === 'reload-confirm') {
           // Trigger reload: go back to booting state, respecting saved config
           const reloadSavedConfig = loadSavedConfig();

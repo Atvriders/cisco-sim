@@ -1,4 +1,4 @@
-import type { CommandHandler, TerminalLine, DeviceState, Vlan, OspfConfig, EigrpConfig, BgpConfig, DhcpPool } from '../types';
+import type { CommandHandler, TerminalLine, DeviceState, Vlan, OspfConfig, EigrpConfig, BgpConfig, DhcpPool, QosClassMap, QosPolicyMap, SpanSession, StpMode } from '../types';
 import { showHandler } from './show';
 
 let _lineId = 3000;
@@ -277,11 +277,38 @@ export const configHandler: CommandHandler = (args, state, raw, negated) => {
         portSecurity: { enabled: false, maxMacAddresses: 1, violation: 'shutdown' as const, stickyLearning: false, learnedAddresses: [] },
         ipHelperAddresses: [], ipAccessGroups: [],
         inputPackets: 0, outputPackets: 0, inputErrors: 0, outputErrors: 0,
-        inputBytes: 0, outputBytes: 0, lastClear: Date.now()
+        inputBytes: 0, outputBytes: 0, lastClear: Date.now(),
+        cdpEnabled: true,
       };
       return {
         output: [],
         newState: { interfaces: { ...state.interfaces, [ifId]: newIface }, unsavedChanges: true },
+        newMode: 'if-config',
+        newContext: { type: 'interface', interfaceId: ifId }
+      };
+    }
+    // Create Loopback if needed
+    if (ifId.startsWith('Loopback') && !state.interfaces[ifId]) {
+      const newLoopback = {
+        id: ifId, slot: 0, port: 0,
+        description: '',
+        adminState: 'up' as const, lineState: 'up' as const,
+        ipAddresses: [],
+        ipv6Addresses: [], ipv6Enabled: false,
+        macAddress: '0000.0000.0000',
+        duplex: 'full' as const, speed: 'auto' as const, mtu: 1514,
+        switchportMode: 'access' as const,
+        accessVlan: 1, trunkAllowedVlans: '1-4094', trunkNativeVlan: 1,
+        spanningTree: { portfast: false, bpduguard: false, bpdufilter: false, state: 'disabled' as const, role: 'disabled' as const },
+        portSecurity: { enabled: false, maxMacAddresses: 1, violation: 'shutdown' as const, stickyLearning: false, learnedAddresses: [] },
+        ipHelperAddresses: [], ipAccessGroups: [],
+        inputPackets: 0, outputPackets: 0, inputErrors: 0, outputErrors: 0,
+        inputBytes: 0, outputBytes: 0, lastClear: Date.now(),
+        cdpEnabled: true,
+      };
+      return {
+        output: [],
+        newState: { interfaces: { ...state.interfaces, [ifId]: newLoopback }, unsavedChanges: true },
         newMode: 'if-config',
         newContext: { type: 'interface', interfaceId: ifId }
       };
@@ -526,6 +553,51 @@ export const configHandler: CommandHandler = (args, state, raw, negated) => {
       return { output: [], newState: { cdpEnabled: !negated, unsavedChanges: true } };
     }
     return { output: [out('% Unknown cdp command', 'error')] };
+  }
+
+  if (cmd === 'lldp') {
+    const sub = (args[1] || '').toLowerCase();
+    if (sub === 'run' || sub === '') {
+      return { output: [], newState: { lldpEnabled: !negated, unsavedChanges: true } };
+    }
+    if (sub === 'timer' || sub === 'holdtime' || sub === 'reinit') {
+      // Accept but just store as unsaved change (timer values not tracked in state)
+      return { output: [], newState: { unsavedChanges: true } };
+    }
+    return { output: [out('% Unknown lldp command', 'error')] };
+  }
+
+  if (cmd === 'ipv6') {
+    const sub = (args[1] || '').toLowerCase();
+    if (sub === 'unicast-routing') {
+      return { output: [], newState: { ipv6RoutingEnabled: !negated, unsavedChanges: true } };
+    }
+    if (sub === 'route') {
+      const prefixArg = args[2]; // e.g. "2001:db8::/64"
+      const nextHop = args[3];
+      if (!prefixArg) return { output: [out('% Incomplete command.', 'error')] };
+      const slashIdx = prefixArg.lastIndexOf('/');
+      const network = slashIdx >= 0 ? prefixArg.slice(0, slashIdx) : prefixArg;
+      const prefixLength = slashIdx >= 0 ? parseInt(prefixArg.slice(slashIdx + 1)) : 128;
+      if (negated) {
+        const newRoutes = state.ipv6Routes.filter(r =>
+          !(r.network === network && r.prefixLength === prefixLength && r.source === 'S')
+        );
+        return { output: [], newState: { ipv6Routes: newRoutes, unsavedChanges: true } };
+      }
+      const newRoute = {
+        source: 'S',
+        network,
+        prefixLength,
+        nextHop: nextHop || undefined,
+        age: '00:00:00'
+      };
+      return {
+        output: [],
+        newState: { ipv6Routes: [...state.ipv6Routes, newRoute], unsavedChanges: true }
+      };
+    }
+    return { output: [out(`% Unknown ipv6 subcommand: ${sub}`, 'error')] };
   }
 
   if (cmd === 'no') {
