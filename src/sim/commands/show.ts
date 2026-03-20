@@ -154,21 +154,6 @@ function showRunningConfig(state: DeviceState): string[] {
     ls.push('no service password-encryption');
   }
   ls.push('!');
-  // VTP
-  if (state.vtp.domain) ls.push(`vtp domain ${state.vtp.domain}`);
-  ls.push(`vtp mode ${state.vtp.mode}`);
-  ls.push(`vtp version ${state.vtp.version}`);
-  ls.push('!');
-  // SNMP
-  for (const c of state.snmp.communities) {
-    ls.push(`snmp-server community ${c.name} ${c.access.toUpperCase()}${c.acl ? ' ' + c.acl : ''}`);
-  }
-  if (state.snmp.location) ls.push(`snmp-server location ${state.snmp.location}`);
-  if (state.snmp.contact) ls.push(`snmp-server contact ${state.snmp.contact}`);
-  for (const h of state.snmp.trapHosts) {
-    ls.push(`snmp-server host ${h.ip} version ${h.version} ${h.community}`);
-  }
-  ls.push('!');
   ls.push(`hostname ${state.hostname}`);
   ls.push('!');
   ls.push('boot-start-marker');
@@ -2968,6 +2953,202 @@ function showAaa(state: DeviceState, servers: boolean): string[] {
     ls.push('             Response: accept 0, reject 0, challenge 0');
     ls.push('             Response: unexpected 0, server error 0, incorrect 0, time 0ms');
     ls.push('             Transaction: success 0, failure 0');
+
+function showDot1x(_state: DeviceState): string[] {
+  return [
+    'Sysauthcontrol              Enabled',
+    'Dot1x Protocol Version      3',
+    'Critical Recovery Delay     100',
+    'Critical EAPOL              Disabled',
+  ];
+}
+
+function showDot1xInterface(ifId: string): string[] {
+  const fullName = ifId
+    .replace(/^Fa(\d)/, 'FastEthernet$1')
+    .replace(/^Gi(\d)/, 'GigabitEthernet$1');
+  return [
+    `Dot1x Info for ${fullName}`,
+    '-----------------------------------',
+    'PAE                       = AUTHENTICATOR',
+    'PortStatus                = AUTHORIZED',
+    'LastAuthTime              = 15:25:32',
+    'AuthSM State              = AUTHENTICATED',
+    'BendSM State              = IDLE',
+    'PortMode                  = Auto',
+    'ReAuthEnabled             = Disabled',
+    'ReAuthConfig              = Auto',
+    'ReAuthPeriod              = 3600',
+    'QuietPeriod               = 60',
+    'ServerTimeout             = 30',
+    'SuppTimeout               = 30',
+    'MaxReq                    = 2',
+    'TxPeriod                  = 30',
+    'RateLimitPeriod           = 0',
+  ];
+}
+
+function showDot1xAll(state: DeviceState): string[] {
+  const ls: string[] = [];
+  const physIfaces = Object.values(state.interfaces)
+    .filter(i => i.id.startsWith('Fa') || i.id.startsWith('Gi'))
+    .sort((a, b) => {
+      if (a.id.startsWith('Gi') && b.id.startsWith('Fa')) return 1;
+      if (a.id.startsWith('Fa') && b.id.startsWith('Gi')) return -1;
+      return a.port - b.port;
+    });
+  for (const iface of physIfaces) {
+    ls.push(...showDot1xInterface(iface.id));
+    ls.push('');
+  }
+  return ls;
+}
+
+function showDot1xStatisticsInterface(ifId: string): string[] {
+  const fullName = ifId
+    .replace(/^Fa(\d)/, 'FastEthernet$1')
+    .replace(/^Gi(\d)/, 'GigabitEthernet$1');
+  return [
+    `Dot1x Statistics for ${fullName}`,
+    '------------------------------------',
+    'RxStart = 0         TxStart = 0',
+    'RxLogoff = 0        TxLogoff = 0',
+    'RxResp = 8          TxReq = 8',
+    'RxRespID = 1        TxReqID = 1',
+    'RxInvalid = 0       TxTotal = 9',
+    'RxLenErr = 0',
+    'RxTotal = 9',
+    'AuthSuccess = 1     AuthFail = 0',
+    'AuthNoResp = 0      AuthReauthsuccess = 0',
+    'AuthReauthfail = 0',
+  ];
+}
+
+function showAuthenticationSessions(_state: DeviceState): string[] {
+  return [
+    'Interface  MAC Address     Method   Domain   Status         Fg  Session ID',
+    'Fa0/1      001a.2b3c.4d5e  dot1x    DATA     Auth            .  0A01010100000001',
+    'Fa0/3      001a.2b3c.4d60  dot1x    DATA     Auth            .  0A01010100000002',
+    'Fa0/5      001a.2b3c.4d62  mab      VOICE    Auth            .  0A01010100000003',
+    '',
+    'Session count = 3',
+  ];
+}
+
+function showAuthenticationSessionsInterface(ifId: string): string[] {
+  const fullName = ifId
+    .replace(/^Fa(\d)/, 'FastEthernet$1')
+    .replace(/^Gi(\d)/, 'GigabitEthernet$1');
+  return [
+    `            Interface:  ${fullName}`,
+    '          MAC Address:  001a.2b3c.4d5e',
+    '         IPv6 Address:  Unknown',
+    '         IPv4 Address:  10.10.10.100',
+    "           User-Name:  CORP\\jsmith",
+    '              Status:  Authorized',
+    '              Domain:  DATA',
+    '      Oper host mode:  single-host',
+    '    Oper control dir:  both',
+    '     Session timeout:  N/A',
+    '  Common Session ID:  0A01010100000001',
+    '    Acct Session ID:  0x00000001',
+    '              Handle:  0x14000001',
+    '      Current Policy:  POLICY_DATA',
+    '',
+    'Local Policies:',
+    '        Service Template: DEFAULT_LINKSEC_POLICY_MUST_SECURE (priority 150)',
+    '',
+    'Server Policies:',
+    '           Vlan Group:  Vlan: 10',
+    '       SGT Value:  0',
+    '',
+    'Method status list:',
+    '       Method           State',
+    '       dot1x            Authc Success',
+  ];
+}
+
+function showVrrp(_state: DeviceState): string[] {
+  return [
+    'Vlan1 - Group 1',
+    '  State is Master',
+    '  Virtual IP address is 192.168.1.254',
+    '  Virtual MAC address is 0000.5e00.0101',
+    '  Advertisement interval is 1.000 sec',
+    '  Preemption enabled',
+    '  Priority is 100',
+    '  Master Router is 192.168.1.1 (local), priority is 100',
+    '  Master Advertisement interval is 1.000 sec',
+    '  Master Down interval is 3.609 sec',
+  ];
+}
+
+function showVrrpBrief(_state: DeviceState): string[] {
+  return [
+    'Interface          Grp Pri Time  Own Pre State   Master addr     Group addr',
+    'Vl1                  1 100 3609      Y   Master  192.168.1.1     192.168.1.254',
+  ];
+}
+
+function showPowerInline(_state: DeviceState): string[] {
+  return [
+    'Available:45.0(w)  Used:15.4(w)  Remaining:29.6(w)',
+    '',
+    'Interface Admin  Oper       Power   Device              Class Max',
+    '                            (Watts)',
+    '--------- ------ ---------- ------- ------------------- ----- ----',
+    'Fa0/1     auto   on         6.5     Cisco IP Phone 7942  2    15.4',
+    'Fa0/3     auto   on         6.5     Cisco IP Phone 7942  2    15.4',
+    'Fa0/5     auto   on         7.7     Cisco AIR-CAP3702I   3    15.4',
+    'Fa0/7     auto   off        0.0     n/a                  n/a   15.4',
+    'Fa0/9     auto   off        0.0     n/a                  n/a   15.4',
+    'Fa0/11    auto   off        0.0     n/a                  n/a   15.4',
+    'Fa0/2     auto   off        0.0     n/a                  n/a   15.4',
+    'Fa0/4     auto   off        0.0     n/a                  n/a   15.4',
+    'Fa0/6     auto   off        0.0     n/a                  n/a   15.4',
+  ];
+}
+
+function showPowerInlineInterface(ifId: string): string[] {
+  const shortId = ifId.replace('FastEthernet', 'Fa').replace('GigabitEthernet', 'Gi');
+  return [
+    'Interface Admin  Oper       Power   Device              Class Max',
+    '                            (Watts)',
+    '--------- ------ ---------- ------- ------------------- ----- ----',
+    `${padRight(shortId, 10)}auto   on         6.5     Cisco IP Phone 7942  2    15.4`,
+    '',
+    'Interface  PowerFault  Fault  LLDP TLV',
+    '                       Status Power  Mdi Status',
+    '--------- ----------- ------- -----  ----------',
+    `${padRight(shortId, 10)}No          false    n/a    n/a`,
+  ];
+}
+
+function showInterfacesDescription(state: DeviceState): string[] {
+  const ls: string[] = [];
+  ls.push('Interface                      Status         Protocol Description');
+  const sortedIfs = sortInterfaces(Object.values(state.interfaces));
+  for (const iface of sortedIfs) {
+    const displayId = expandIfNameFull(iface.id)
+      .replace('FastEthernet', 'Fa')
+      .replace('GigabitEthernet', 'Gi')
+      .replace('Loopback', 'Lo');
+    let statusStr: string;
+    if (iface.adminState === 'down') {
+      statusStr = 'admin down';
+    } else if (iface.lineState === 'up') {
+      statusStr = 'up';
+    } else if (iface.lineState === 'err-disabled') {
+      statusStr = 'err-disabled';
+    } else {
+      statusStr = 'down';
+    }
+    const protoStr = iface.lineState === 'up' ? 'up' : iface.lineState === 'err-disabled' ? 'err-disabled' : 'down';
+    ls.push(`${padRight(displayId, 31)}${padRight(statusStr, 15)}${padRight(protoStr, 9)}${iface.description}`);
+  }
+  return ls;
+}
+
     ls.push('     Account: request 0, timeouts 0, failover 0, retransmission 0');
     ls.push('             Response: start 0, interim 0, stop 0');
     ls.push('             Response: unexpected 0, server error 0, incorrect 0, time 0ms');
@@ -3259,22 +3440,6 @@ export const showHandler: CommandHandler = (args, state, _raw, _negated) => {
       if (sub3lower === 'trunk') return makeResult(showInterfacesCountersTrunk(state));
       return makeResult(showInterfacesCounters(state));
     }
-    // show interfaces switchport [<id>]
-    if (sub2lower === 'switchport') {
-      const rest3 = mainArgs.slice(2).join('');
-      if (!rest3) return makeResult(showInterfacesSwitchport(state));
-      const ifId3 = resolveInterface(rest3, state);
-      if (!ifId3) return { output: [out(`% Invalid interface specified`, 'error')] };
-      return makeResult(showInterfacesSwitchport(state, ifId3));
-    }
-    // show interfaces capabilities [<id>]
-    if (sub2lower === 'capabilities') {
-      const rest3 = mainArgs.slice(2).join('');
-      if (!rest3) return makeResult(showInterfacesCapabilities(state));
-      const ifId3 = resolveInterface(rest3, state);
-      if (!ifId3) return { output: [out(`% Invalid interface specified`, 'error')] };
-      return makeResult(showInterfacesCapabilities(state, ifId3));
-    }
     const rest = mainArgs.slice(1).join('');
     if (!rest) return makeResult(showInterfaces(state));
     const ifId = resolveInterface(rest, state);
@@ -3360,19 +3525,6 @@ export const showHandler: CommandHandler = (args, state, _raw, _negated) => {
       if (!isNaN(idArg2)) return makeResult(showIpSlaStatistics(state, idArg2));
       return makeResult(showIpSlaStatistics(state));
     }
-    if (sub2 === 'pim') {
-      const sub3 = (mainArgs[2] || '').toLowerCase();
-      if (sub3.startsWith('nei') || sub3 === 'neighbor') return makeResult(showIpPimNeighbor(state));
-      if (sub3.startsWith('int') || sub3 === 'interface') return makeResult(showIpPimInterface(state));
-      return makeResult(showIpPimNeighbor(state));
-    }
-    if (sub2 === 'mroute') return makeResult(showIpMroute(state));
-    if (sub2 === 'igmp') {
-      const sub3 = (mainArgs[2] || '').toLowerCase();
-      if (sub3.startsWith('gro') || sub3 === 'groups') return makeResult(showIpIgmpGroups(state));
-      if (sub3.startsWith('int') || sub3 === 'interface') return makeResult(showIpIgmpInterface(state));
-      return makeResult(showIpIgmpGroups(state));
-    }
     return { output: [out(`% Unrecognized show ip subcommand: ${sub2}`, 'error')] };
   }
 
@@ -3382,11 +3534,6 @@ export const showHandler: CommandHandler = (args, state, _raw, _negated) => {
   }
 
   if (sub === 'mac' || sub.startsWith('mac')) {
-    // show mac address-table aging-time
-    const joinedMacArgs = mainArgs.map(a => a.toLowerCase()).join(' ');
-    if (joinedMacArgs.includes('aging')) return makeResult(showMacAddressTableAgingTime(state));
-    if (joinedMacArgs.includes('count')) return makeResult(showMacAddressTableCount(state));
-    if (joinedMacArgs.includes('notif')) return makeResult(showMacAddressTableNotification(state));
     const dynamic = mainArgs.some(a => a.toLowerCase().startsWith('dyn'));
     return makeResult(showMacTable(state, dynamic));
   }
@@ -3603,12 +3750,6 @@ export const showHandler: CommandHandler = (args, state, _raw, _negated) => {
       return makeResult(showCryptoPkiCertificates(state));
     }
     return makeResult(showCryptoKeyMypubkeyRsa(state));
-  }
-
-  if (sub === 'errdisable') {
-    if (sub2 === 'detect') return makeResult(showErrdisableDetect(state));
-    // 'recovery' or default
-    return makeResult(showErrdisableRecovery(state));
   }
 
   return {
