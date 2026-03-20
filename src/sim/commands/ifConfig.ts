@@ -150,6 +150,94 @@ export const ifConfigHandler: CommandHandler = (args, state, _raw, negated) => {
       }
     }
 
+    if (sub === 'dhcp') {
+      const sub2 = (args[2] || '').toLowerCase();
+      if (sub2 === 'snooping') {
+        const sub3 = (args[3] || '').toLowerCase();
+        if (sub3 === 'trust') {
+          // ip dhcp snooping trust  /  no ip dhcp snooping trust
+          const trusted = state.dhcpSnooping.trustedPorts;
+          if (negated) {
+            return {
+              output: [],
+              newState: {
+                dhcpSnooping: { ...state.dhcpSnooping, trustedPorts: trusted.filter(p => p !== ifId) },
+                unsavedChanges: true
+              }
+            };
+          }
+          if (!trusted.includes(ifId)) {
+            return {
+              output: [],
+              newState: {
+                dhcpSnooping: { ...state.dhcpSnooping, trustedPorts: [...trusted, ifId] },
+                unsavedChanges: true
+              }
+            };
+          }
+          return { output: [], newState: { unsavedChanges: true } };
+        }
+        if (sub3 === 'rate') {
+          const sub4 = (args[4] || '').toLowerCase();
+          if (sub4 === 'limit') {
+            if (negated) {
+              return {
+                output: [],
+                newState: {
+                  dhcpSnooping: { ...state.dhcpSnooping, rateLimits: state.dhcpSnooping.rateLimits.filter(r => r.port !== ifId) },
+                  unsavedChanges: true
+                }
+              };
+            }
+            const pps = parseInt(args[5] || '100');
+            const newRateLimits = state.dhcpSnooping.rateLimits.filter(r => r.port !== ifId);
+            newRateLimits.push({ port: ifId, pps });
+            return {
+              output: [],
+              newState: { dhcpSnooping: { ...state.dhcpSnooping, rateLimits: newRateLimits }, unsavedChanges: true }
+            };
+          }
+        }
+      }
+      return { output: [], newState: { unsavedChanges: true } };
+    }
+
+    if (sub === 'arp') {
+      const sub2 = (args[2] || '').toLowerCase();
+      if (sub2 === 'inspection') {
+        const sub3 = (args[3] || '').toLowerCase();
+        if (sub3 === 'trust') {
+          const trusted = state.dai.trustedPorts;
+          if (negated) {
+            return {
+              output: [],
+              newState: {
+                dai: { ...state.dai, trustedPorts: trusted.filter(p => p !== ifId) },
+                unsavedChanges: true
+              }
+            };
+          }
+          if (!trusted.includes(ifId)) {
+            return {
+              output: [],
+              newState: {
+                dai: { ...state.dai, trustedPorts: [...trusted, ifId] },
+                unsavedChanges: true
+              }
+            };
+          }
+          return { output: [], newState: { unsavedChanges: true } };
+        }
+      }
+      return { output: [], newState: { unsavedChanges: true } };
+    }
+
+    if (sub === 'verify') {
+      // ip verify source  /  ip verify source port-security  /  no ip verify source
+      // Just acknowledge — IP Source Guard binding state is managed globally
+      return { output: [], newState: { unsavedChanges: true } };
+    }
+
     return { output: [out(`% Unknown ip subcommand: ${sub}`, 'error')] };
   }
 
