@@ -3646,6 +3646,48 @@ export const showHandler: CommandHandler = (args, state, _raw, _negated) => {
     return makeResult(showNtpStatus(state));
   }
 
+  if (sub === 'mls') {
+    const mlsShowSub = (mainArgs[1] || '').toLowerCase();
+    if (mlsShowSub === 'qos') {
+      const mlsShowSub2 = (mainArgs[2] || '').toLowerCase();
+      if (mlsShowSub2.startsWith('int') || mlsShowSub2 === 'interface') {
+        const rest = mainArgs.slice(3).join('');
+        if (!rest) return makeResult(showMlsQosInterface(state));
+        const ifId = resolveInterface(rest, state);
+        if (!ifId) return { output: [out('% Invalid interface specified', 'error')] };
+        return makeResult(showMlsQosInterface(state, ifId));
+      }
+      return makeResult(showMlsQos(state));
+    }
+    return makeResult(showMlsQos(state));
+  }
+
+  if (sub === 'class-map') {
+    const cmShowName = mainArgs[1] || '';
+    return makeResult(showClassMap(state, cmShowName || undefined));
+  }
+
+  if (sub === 'policy-map') {
+    const pmShowSub2 = (mainArgs[1] || '').toLowerCase();
+    if (pmShowSub2.startsWith('int') || pmShowSub2 === 'interface') {
+      const rest = mainArgs.slice(2).join('');
+      if (!rest) return { output: [out('% Incomplete command.', 'error')] };
+      const ifId = resolveInterface(rest, state);
+      if (!ifId) return { output: [out('% Invalid interface specified', 'error')] };
+      return makeResult(showPolicyMapInterface(state, ifId));
+    }
+    return makeResult(showPolicyMap(state, mainArgs[1] || undefined));
+  }
+
+  if (sub === 'monitor') {
+    const monShowSub = (mainArgs[1] || '').toLowerCase();
+    if (monShowSub === 'session') {
+      const sid = parseInt(mainArgs[2] || '');
+      return makeResult(showMonitorSession(state, isNaN(sid) ? undefined : sid));
+    }
+    return makeResult(showMonitorSession(state));
+  }
+
   if (sub === 'vtp') {
     if (sub2.startsWith('sta') || sub2 === 'status') return makeResult(showVtpStatus(state));
     if (sub2.startsWith('cou') || sub2 === 'counters') return makeResult(showVtpCounters(state));

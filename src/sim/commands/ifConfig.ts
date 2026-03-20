@@ -238,6 +238,19 @@ export const ifConfigHandler: CommandHandler = (args, state, _raw, negated) => {
       return { output: [], newState: { unsavedChanges: true } };
     }
 
+    if (sub === 'pim') {
+      // ip pim sparse-mode / ip pim sparse-dense-mode / ip pim dense-mode
+      return { output: [], newState: { unsavedChanges: true } };
+    }
+
+    if (sub === 'igmp') {
+      const sub2 = (args[2] || '').toLowerCase();
+      if (sub2 === 'version' || sub2 === 'query-interval') {
+        return { output: [], newState: { unsavedChanges: true } };
+      }
+      return { output: [], newState: { unsavedChanges: true } };
+    }
+
     return { output: [out(`% Unknown ip subcommand: ${sub}`, 'error')] };
   }
 

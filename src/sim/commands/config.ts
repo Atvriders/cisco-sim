@@ -355,6 +355,15 @@ export const configHandler: CommandHandler = (args, state, raw, negated) => {
       return { output: [out(`% Unknown ip arp subcommand: ${sub2}`, 'error')] };
     }
 
+    if (sub === 'multicast-routing') {
+      return { output: [], newState: { unsavedChanges: true } };
+    }
+
+    if (sub === 'pim') {
+      // ip pim ssm range <acl> / ip pim rp-address <ip>
+      return { output: [], newState: { unsavedChanges: true } };
+    }
+
     return { output: [out(`% Unknown ip subcommand: ${sub}`, 'error')] };
   }
 
@@ -1384,6 +1393,33 @@ export const configHandler: CommandHandler = (args, state, raw, negated) => {
       }
       return { output: [], newState: { unsavedChanges: true } };
     }
+    return { output: [], newState: { unsavedChanges: true } };
+  }
+
+  if (cmd === 'errdisable') {
+    const sub = (args[1] || '').toLowerCase();
+    if (sub === 'recovery') {
+      const sub2 = (args[2] || '').toLowerCase();
+      if (sub2 === 'cause') {
+        const cause = (args[3] || '').toLowerCase();
+        if (cause === 'all') {
+          return { output: [out("% Note: The 'all' keyword will set recovery for all supported causes.")], newState: { unsavedChanges: true } };
+        }
+        return { output: [], newState: { unsavedChanges: true } };
+      }
+      if (sub2 === 'interval') {
+        return { output: [], newState: { unsavedChanges: true } };
+      }
+      return { output: [], newState: { unsavedChanges: true } };
+    }
+    if (sub === 'detect') {
+      return { output: [], newState: { unsavedChanges: true } };
+    }
+    return { output: [], newState: { unsavedChanges: true } };
+  }
+
+  if (cmd === 'udld') {
+    // udld aggressive / udld enable / no udld aggressive
     return { output: [], newState: { unsavedChanges: true } };
   }
 
