@@ -263,11 +263,47 @@ export const execHandler: CommandHandler = (args, state, raw, _negated) => {
   }
 
   if (cmd === 'debug') {
-    return { output: [out('*Mar  1 00:00:00.001: %SYS-5-DEBUG_ON: Debugging ON', 'system')] };
+    const sub1 = (args[1] || '').toLowerCase();
+    const sub2 = (args[2] || '').toLowerCase();
+    const sub3 = (args[3] || '').toLowerCase();
+    if (!sub1) return { output: [out('% Incomplete command.', 'error')] };
+    if (sub1 === 'ip') {
+      if (sub2 === 'ospf') {
+        if (sub3 === 'adj' || sub3 === 'adjacency') {
+          const key = 'ip ospf adj';
+          return { output: [out('OSPF adjacency debugging is on', 'system')], newState: { activeDebugs: [...(state.activeDebugs||[]).filter(d=>d!==key), key] } };
+        }
+        if (sub3 === 'events' || sub3 === '') {
+          const key = 'ip ospf events';
+          return { output: [out('OSPF events debugging is on', 'system')], newState: { activeDebugs: [...(state.activeDebugs||[]).filter(d=>d!==key), key] } };
+        }
+        const key = 'ip ospf events';
+        return { output: [out('OSPF events debugging is on', 'system')], newState: { activeDebugs: [...(state.activeDebugs||[]).filter(d=>d!==key), key] } };
+      }
+      if (sub2 === 'rip') {
+        const key = 'ip rip';
+        return { output: [out('RIP protocol debugging is on', 'system')], newState: { activeDebugs: [...(state.activeDebugs||[]).filter(d=>d!==key), key] } };
+      }
+      if (sub2 === 'packet') {
+        const key = 'ip packet';
+        return { output: [out('IP packet debugging is on (filter list is not set)', 'system')], newState: { activeDebugs: [...(state.activeDebugs||[]).filter(d=>d!==key), key] } };
+      }
+    }
+    if (sub1 === 'spanning-tree') {
+      if (sub2 === 'events') {
+        const key = 'spanning-tree events';
+        return { output: [out('Spanning tree events debugging is on', 'system')], newState: { activeDebugs: [...(state.activeDebugs||[]).filter(d=>d!==key), key] } };
+      }
+    }
+    return { output: [out(`*Mar  1 00:00:00.001: %SYS-5-DEBUG_ON: Debugging ON (${args.slice(1).join(' ')})`, 'system')] };
   }
 
   if (cmd === 'undebug' || cmd === 'un') {
-    return { output: [out('All possible debugging has been turned off', 'system')] };
+    const sub1 = (args[1] || '').toLowerCase();
+    if (sub1 === 'all' || !sub1) {
+      return { output: [out('All possible debugging has been turned off', 'system')], newState: { activeDebugs: [] } };
+    }
+    return { output: [out('All possible debugging has been turned off', 'system')], newState: { activeDebugs: [] } };
   }
 
   if (cmd === 'clear') {
@@ -281,20 +317,70 @@ export const execHandler: CommandHandler = (args, state, raw, _negated) => {
         if (updatedIfaces[id]) {
           updatedIfaces[id] = { ...updatedIfaces[id], inputPackets: 0, outputPackets: 0, inputBytes: 0, outputBytes: 0, inputErrors: 0, outputErrors: 0, lastClear: now };
         }
-        return { output: [out('')], newState: { interfaces: updatedIfaces } };
+        return { output: [out(`Clear "show interface" counters on this interface [confirm]`), out('')], newState: { interfaces: updatedIfaces } };
       }
       const updatedIfaces: typeof state.interfaces = {};
       for (const [k, v] of Object.entries(state.interfaces)) {
         updatedIfaces[k] = { ...v, inputPackets: 0, outputPackets: 0, inputBytes: 0, outputBytes: 0, inputErrors: 0, outputErrors: 0, lastClear: now };
       }
-      return { output: [out('')], newState: { interfaces: updatedIfaces } };
+      return { output: [out(`Clear "show interface" counters on all interfaces [confirm]`), out('')], newState: { interfaces: updatedIfaces } };
     }
-    if (sub === 'mac') return { output: [out('')], newState: { macTable: [] } };
-    if (sub === 'arp') return { output: [out('')], newState: { arpTable: [] } };
+    if (sub === 'mac') {
+      const sub2 = (args[2] || '').toLowerCase();
+      const sub3 = (args[3] || '').toLowerCase();
+      // clear mac address-table dynamic
+      if (sub2.startsWith('addr') || sub2 === 'address-table') {
+        if (sub3 === 'dynamic' || !sub3) {
+          return { output: [], newState: { macTable: state.macTable.filter(e => e.type === 'static' || e.type === 'secure-static') } };
+        }
+      }
+      return { output: [], newState: { macTable: [] } };
+    }
+    if (sub === 'arp' || sub === 'arp-cache') return { output: [], newState: { arpTable: [] } };
+    if (sub === 'line') {
+      return {
+        output: [out('[confirm]'), out('')],
+        pendingInput: 'clear-line-confirm',
+        pendingCommand: `clear line ${args[2] || ''}`
+      };
+    }
+    if (sub === 'ip') {
+      const sub2 = (args[2] || '').toLowerCase();
+      if (sub2 === 'ospf') {
+        const sub3 = (args[3] || '').toLowerCase();
+        if (sub3 === 'process' || !sub3) {
+          return {
+            output: [out('Reset OSPF process? [no]: '), out('  -- OSPF process reset --', 'system')],
+            newState: state.ospf ? { ospf: { ...state.ospf, neighbors: [] } } : {}
+          };
+        }
+      }
+    }
+    if (sub.startsWith('span') || sub === 'spanning-tree') {
+      const sub2 = (args[2] || '').toLowerCase();
+      if (sub2 === 'detected-protocols') {
+        return { output: [] };
+      }
+    }
+    if (sub === 'logging') {
+      return { output: [], newState: { loggingBuffer: [] } };
+    }
     return { output: [out('% Unknown clear command', 'error')] };
   }
 
   if (cmd === 'terminal') {
+    const sub = (args[1] || '').toLowerCase();
+    if (sub === 'length') {
+      const len = parseInt(args[2] || '24');
+      return { output: [], newState: { terminalLength: isNaN(len) ? 24 : len } };
+    }
+    if (sub === 'width') {
+      const w = parseInt(args[2] || '80');
+      return { output: [], newState: { terminalWidth: isNaN(w) ? 80 : w } };
+    }
+    if (sub === 'monitor') {
+      return { output: [out('Console already monitors', 'system')] };
+    }
     return { output: [] };
   }
 

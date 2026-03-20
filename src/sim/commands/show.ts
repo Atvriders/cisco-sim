@@ -1034,7 +1034,248 @@ function showIpDhcpBinding(_state: DeviceState): string[] {
     'IP address          Client-ID/              Lease expiration        Type       State      Interface',
     '                    Hardware address/',
     '                    User name',
+    '10.10.10.100        0100.1a2b.3c4d.5e       Mar 21 2026 12:00 AM    Automatic  Active     Vlan10',
+    '10.10.10.101        0100.2b3c.4d5e.6f       Mar 21 2026 12:00 AM    Automatic  Active     Vlan10',
+    '10.20.20.100        0100.3c4d.5e6f.7a       Mar 21 2026 12:00 AM    Automatic  Active     Vlan20',
   ];
+}
+
+function showIpDhcpPool(_state: DeviceState): string[] {
+  return [
+    'Pool DATA-POOL :',
+    ' Utilization mark (high/low)    : 100 / 0',
+    ' Subnet size (first/next)       : 0 / 0 ',
+    ' Total addresses                : 254',
+    ' Leased addresses               : 3',
+    ' Pending event                  : none',
+    ' 1 subnet is currently in the pool :',
+    ' Current index        IP address range                    Leased addresses',
+    ' 10.10.10.102         10.10.10.1       - 10.10.10.254      3',
+  ];
+}
+
+function showIpDhcpConflict(_state: DeviceState): string[] {
+  return [
+    'There is no record for 0 conflicting address',
+  ];
+}
+
+function showSessions(_state: DeviceState): string[] {
+  return [
+    'Conn Host                                Address             Byte  Idle Conn Name',
+  ];
+}
+
+function showTerminal(_state: DeviceState): string[] {
+  return [
+    'Line 0, Location: "", Type: ""',
+    'Length: 24 lines, Width: 80 columns',
+    'Baud rate (TX/RX) is 9600/9600, no parity, 2 stopbits, 8 databits',
+    'Status: PSI Enabled, Ready, Active, No Exit Banner',
+    'Capabilities: none',
+    'Modem state: Ready',
+    'Special Chars: Escape  Hold  Stop  Start  Disconnect  Activation',
+    '              ^^X     none  -     -     none        none',
+    'Timeouts:      Idle EXEC    Idle Session   Modem Answer  PPP Negotiation',
+    '               00:10:00      never          none                 none',
+    '              H  H   Logged in',
+  ];
+}
+
+function showIpSsh(_state: DeviceState): string[] {
+  return [
+    'SSH Enabled - version 2.0',
+    'Authentication timeout: 120 secs; Authentication retries: 3',
+    'Minimum expected Diffie Hellman key size : 1024 bits',
+    'IOS Keys in SECURE configuration: YES (touched)',
+  ];
+}
+
+function showInterfacesStatus(state: DeviceState): string[] {
+  const ls: string[] = [];
+  ls.push('Port      Name               Status       Vlan       Duplex  Speed Type');
+
+  const physIfaces = Object.values(state.interfaces)
+    .filter(i => i.id.startsWith('Fa') || i.id.startsWith('Gi'))
+    .sort((a, b) => {
+      const aGi = a.id.startsWith('Gi') ? 1 : 0;
+      const bGi = b.id.startsWith('Gi') ? 1 : 0;
+      if (aGi !== bGi) return aGi - bGi;
+      return a.port - b.port;
+    });
+
+  for (const iface of physIfaces) {
+    const portShort = shortIfName(iface.id).replace('FastEthernet', 'Fa').replace('GigabitEthernet', 'Gi');
+    const name = iface.description.length > 18 ? iface.description.slice(0, 18) : iface.description;
+    let statusStr: string;
+    if (iface.adminState === 'down') statusStr = 'disabled';
+    else if (iface.lineState === 'up') statusStr = 'connected';
+    else if (iface.lineState === 'err-disabled') statusStr = 'err-disabled';
+    else statusStr = 'notconnect';
+
+    let vlanStr: string;
+    if (iface.switchportMode === 'trunk') {
+      vlanStr = 'trunk';
+    } else {
+      vlanStr = String(iface.accessVlan);
+    }
+
+    const duplexStr = iface.duplex === 'full' ? 'full' : iface.duplex === 'half' ? 'half' : 'auto';
+    const speedStr = iface.speed === 'auto' ? 'auto' : iface.speed;
+    const typeStr = iface.id.startsWith('Gi') ? '1000BaseTX' : '10/100BaseTX';
+    const duplexDisplay = iface.lineState === 'up' ? (iface.duplex === 'auto' ? 'a-full' : duplexStr) : 'auto';
+    const speedDisplay = iface.lineState === 'up' ? (iface.speed === 'auto' ? 'a-100' : speedStr) : 'auto';
+
+    ls.push(`${padRight(portShort, 10)}${padRight(name, 19)}${padRight(statusStr, 13)}${padRight(vlanStr, 11)}${padRight(duplexDisplay, 8)}${padRight(speedDisplay, 6)}${typeStr}`);
+  }
+
+  return ls;
+}
+
+function showInterfacesTrunk(state: DeviceState): string[] {
+  const ls: string[] = [];
+  const trunkIfaces = Object.values(state.interfaces)
+    .filter(i => i.switchportMode === 'trunk' && (i.id.startsWith('Fa') || i.id.startsWith('Gi')))
+    .sort((a, b) => {
+      const aGi = a.id.startsWith('Gi') ? 1 : 0;
+      const bGi = b.id.startsWith('Gi') ? 1 : 0;
+      if (aGi !== bGi) return aGi - bGi;
+      return a.port - b.port;
+    });
+
+  if (trunkIfaces.length === 0) {
+    return [''];
+  }
+
+  ls.push('Port        Mode             Encapsulation  Status        Native vlan');
+  for (const iface of trunkIfaces) {
+    const portShort = shortIfName(iface.id);
+    ls.push(`${padRight(portShort, 12)}${padRight('on', 17)}${padRight('802.1q', 15)}${padRight('trunking', 14)}${iface.trunkNativeVlan}`);
+  }
+
+  ls.push('');
+  ls.push('Port        Vlans allowed on trunk');
+  for (const iface of trunkIfaces) {
+    const portShort = shortIfName(iface.id);
+    ls.push(`${padRight(portShort, 12)}${iface.trunkAllowedVlans || '1-4094'}`);
+  }
+
+  ls.push('');
+  ls.push('Port        Vlans allowed and active in management domain');
+  for (const iface of trunkIfaces) {
+    const portShort = shortIfName(iface.id);
+    ls.push(`${padRight(portShort, 12)}${iface.trunkAllowedVlans || '1-4094'}`);
+  }
+
+  ls.push('');
+  ls.push('Port        Vlans in spanning tree forwarding state and not pruned');
+  for (const iface of trunkIfaces) {
+    const portShort = shortIfName(iface.id);
+    ls.push(`${padRight(portShort, 12)}${iface.trunkAllowedVlans || '1-4094'}`);
+  }
+
+  return ls;
+}
+
+function showRunInterface(state: DeviceState, ifId: string): string[] {
+  const iface = state.interfaces[ifId];
+  if (!iface) return [`% Interface ${ifId} not found`];
+
+  function expandIfName(id: string): string {
+    return id
+      .replace(/^Fa(\d+\/\d+)$/, 'FastEthernet$1')
+      .replace(/^Gi(\d+\/\d+)$/, 'GigabitEthernet$1');
+  }
+
+  const ls: string[] = [];
+  ls.push('Building configuration...');
+  ls.push('');
+  const byteCount = 87;
+  ls.push(`Current configuration : ${byteCount} bytes`);
+  ls.push('!');
+  const fullName = expandIfName(ifId);
+  ls.push(`interface ${fullName}`);
+  if (iface.description) ls.push(` description ${iface.description}`);
+  if (iface.adminState === 'down') ls.push(' shutdown');
+  for (const ip of iface.ipAddresses) {
+    ls.push(` ip address ${ip.address} ${ip.mask}${ip.secondary ? ' secondary' : ''}`);
+  }
+  for (const h of iface.ipHelperAddresses) ls.push(` ip helper-address ${h}`);
+  for (const ag of iface.ipAccessGroups) ls.push(` ip access-group ${ag.acl} ${ag.direction}`);
+  if (!ifId.startsWith('Loopback') && !ifId.startsWith('Vlan')) {
+    if (iface.switchportMode === 'trunk') {
+      ls.push(' switchport trunk encapsulation dot1q');
+      ls.push(' switchport mode trunk');
+      if (iface.trunkAllowedVlans && iface.trunkAllowedVlans !== '1-4094') ls.push(` switchport trunk allowed vlan ${iface.trunkAllowedVlans}`);
+      if (iface.trunkNativeVlan && iface.trunkNativeVlan !== 1) ls.push(` switchport trunk native vlan ${iface.trunkNativeVlan}`);
+    } else {
+      if (iface.accessVlan !== 1) ls.push(` switchport access vlan ${iface.accessVlan}`);
+      ls.push(' switchport mode access');
+    }
+    if (iface.duplex !== 'auto') ls.push(` duplex ${iface.duplex}`);
+    if (iface.speed !== 'auto') ls.push(` speed ${iface.speed}`);
+  }
+  if (iface.spanningTree.portfast) ls.push(' spanning-tree portfast');
+  if (iface.spanningTree.bpduguard) ls.push(' spanning-tree bpduguard enable');
+  if (iface.channelGroup) ls.push(` channel-group ${iface.channelGroup.number} mode ${iface.channelGroup.mode}`);
+  if (iface.portSecurity.enabled) {
+    ls.push(' switchport port-security');
+    if (iface.portSecurity.maxMacAddresses !== 1) ls.push(` switchport port-security maximum ${iface.portSecurity.maxMacAddresses}`);
+    ls.push(` switchport port-security violation ${iface.portSecurity.violation}`);
+  }
+  ls.push('!');
+  ls.push('end');
+  return ls;
+}
+
+function applyPipeFilter(lines: string[], pipeArgs: string[]): string[] {
+  if (!pipeArgs || pipeArgs.length === 0) return lines;
+  const verb = (pipeArgs[0] || '').toLowerCase();
+  const pattern = pipeArgs.slice(1).join(' ');
+  if (!pattern) return lines;
+
+  if (verb === 'include') {
+    try {
+      const re = new RegExp(pattern, 'i');
+      return lines.filter(l => re.test(l));
+    } catch {
+      return lines.filter(l => l.toLowerCase().includes(pattern.toLowerCase()));
+    }
+  }
+  if (verb === 'exclude') {
+    try {
+      const re = new RegExp(pattern, 'i');
+      return lines.filter(l => !re.test(l));
+    } catch {
+      return lines.filter(l => !l.toLowerCase().includes(pattern.toLowerCase()));
+    }
+  }
+  if (verb === 'begin') {
+    try {
+      const re = new RegExp(pattern, 'i');
+      const idx = lines.findIndex(l => re.test(l));
+      return idx >= 0 ? lines.slice(idx) : [];
+    } catch {
+      const idx = lines.findIndex(l => l.toLowerCase().includes(pattern.toLowerCase()));
+      return idx >= 0 ? lines.slice(idx) : [];
+    }
+  }
+  return lines;
+}
+
+function applyRunningConfigSection(lines: string[], keyword: string): string[] {
+  // Find all sections matching keyword (e.g. "interface" or "router")
+  const result: string[] = [];
+  let inSection = false;
+  for (const line of lines) {
+    if (line.toLowerCase().startsWith(keyword.toLowerCase()) && !line.startsWith(' ')) {
+      inSection = true;
+    } else if (inSection && !line.startsWith(' ') && line !== '!' && line !== '') {
+      inSection = false;
+    }
+    if (inSection) result.push(line);
+  }
+  return result;
 }
 
 function showEnvironment(state: DeviceState): string[] {
@@ -1084,12 +1325,22 @@ function resolveInterface(partial: string, state: DeviceState): string | null {
 }
 
 export const showHandler: CommandHandler = (args, state, _raw, _negated) => {
-  const sub = (args[0] || '').toLowerCase();
-  const sub2 = (args[1] || '').toLowerCase();
+  // Parse pipe operator: args may contain '|' as a token
+  let mainArgs = args;
+  let pipeArgs: string[] = [];
+  const pipeIdx = args.indexOf('|');
+  if (pipeIdx >= 0) {
+    mainArgs = args.slice(0, pipeIdx);
+    pipeArgs = args.slice(pipeIdx + 1);
+  }
 
-  const makeResult = (textLines: string[]): ReturnType<CommandHandler> => ({
-    output: textLines.map(t => out(t))
-  });
+  const sub = (mainArgs[0] || '').toLowerCase();
+  const sub2 = (mainArgs[1] || '').toLowerCase();
+
+  const makeResult = (textLines: string[]): ReturnType<CommandHandler> => {
+    const filtered = pipeArgs.length > 0 ? applyPipeFilter(textLines, pipeArgs) : textLines;
+    return { output: filtered.map(t => out(t)) };
+  };
 
   if (!sub || sub === '?') {
     return makeResult([
@@ -1119,7 +1370,21 @@ export const showHandler: CommandHandler = (args, state, _raw, _negated) => {
 
   if (sub.startsWith('ver')) return makeResult(showVersion(state));
 
-  if (sub.startsWith('run') || sub === 'running-config') return makeResult(showRunningConfig(state));
+  if (sub.startsWith('run') || sub === 'running-config') {
+    // show running-config section <keyword> OR show running-config interface <id>
+    if (sub2 === 'section' && mainArgs[2]) {
+      const keyword = mainArgs[2];
+      const configLines = showRunningConfig(state);
+      return makeResult(applyRunningConfigSection(configLines, keyword));
+    }
+    if (sub2.startsWith('int') && mainArgs[2]) {
+      const rest = mainArgs.slice(2).join('');
+      const ifId = resolveInterface(rest, state);
+      if (!ifId) return { output: [out(`% Invalid interface specified`, 'error')] };
+      return makeResult(showRunInterface(state, ifId));
+    }
+    return makeResult(showRunningConfig(state));
+  }
 
   if (sub.startsWith('start') || sub === 'startup-config') {
     if (!state.startupConfig) return { output: [out('startup-config is not present', 'error')] };
@@ -1127,7 +1392,16 @@ export const showHandler: CommandHandler = (args, state, _raw, _negated) => {
   }
 
   if (sub.startsWith('int') || sub === 'int') {
-    const rest = args.slice(1).join('');
+    const sub2lower = sub2.toLowerCase();
+    // show interfaces status
+    if (sub2lower === 'status') {
+      return makeResult(showInterfacesStatus(state));
+    }
+    // show interfaces trunk
+    if (sub2lower === 'trunk') {
+      return makeResult(showInterfacesTrunk(state));
+    }
+    const rest = mainArgs.slice(1).join('');
     if (!rest) return makeResult(showInterfaces(state));
     const ifId = resolveInterface(rest, state);
     if (!ifId) return { output: [out(`% Invalid interface specified`, 'error')] };
@@ -1136,9 +1410,9 @@ export const showHandler: CommandHandler = (args, state, _raw, _negated) => {
 
   if (sub === 'ip') {
     if (sub2.startsWith('int') || sub2 === 'interface') {
-      const sub3 = (args[2] || '').toLowerCase();
+      const sub3 = (mainArgs[2] || '').toLowerCase();
       if (sub3.startsWith('bri') || sub3 === 'brief') return makeResult(showIpInterfaceBrief(state));
-      const rest = args.slice(2).join('');
+      const rest = mainArgs.slice(2).join('');
       if (!rest) return makeResult(showIpInterfaceBrief(state));
       const ifId = resolveInterface(rest, state);
       if (!ifId) return { output: [out(`% Invalid interface`, 'error')] };
@@ -1146,21 +1420,25 @@ export const showHandler: CommandHandler = (args, state, _raw, _negated) => {
     }
     if (sub2.startsWith('ro') || sub2 === 'route') return makeResult(showIpRoute(state));
     if (sub2.startsWith('os') || sub2 === 'ospf') {
-      const sub3 = (args[2] || '').toLowerCase();
+      const sub3 = (mainArgs[2] || '').toLowerCase();
       if (sub3.startsWith('nei') || sub3 === 'neighbor') return makeResult(showIpOspfNeighbor(state));
       return makeResult(showIpOspfNeighbor(state));
     }
     if (sub2.startsWith('ei') || sub2 === 'eigrp') return makeResult(showIpEigrpNeighbors(state));
     if (sub2.startsWith('bg') || sub2 === 'bgp') {
-      const sub3 = (args[2] || '').toLowerCase();
+      const sub3 = (mainArgs[2] || '').toLowerCase();
       if (sub3.startsWith('sum') || sub3 === 'summary') return makeResult(showIpBgpSummary(state));
       return makeResult(showIpBgpSummary(state));
     }
     if (sub2.startsWith('acc') || sub2 === 'access-lists') return makeResult(showIpAccessLists(state));
     if (sub2 === 'dhcp') {
-      const sub3 = (args[2] || '').toLowerCase();
+      const sub3 = (mainArgs[2] || '').toLowerCase();
       if (sub3.startsWith('bin') || sub3 === 'binding') return makeResult(showIpDhcpBinding(state));
+      if (sub3.startsWith('pool') || sub3 === 'pool') return makeResult(showIpDhcpPool(state));
+      if (sub3.startsWith('con') || sub3 === 'conflict') return makeResult(showIpDhcpConflict(state));
+      return makeResult(showIpDhcpBinding(state));
     }
+    if (sub2 === 'ssh') return makeResult(showIpSsh(state));
     return { output: [out(`% Unrecognized show ip subcommand: ${sub2}`, 'error')] };
   }
 
@@ -1170,7 +1448,7 @@ export const showHandler: CommandHandler = (args, state, _raw, _negated) => {
   }
 
   if (sub === 'mac' || sub.startsWith('mac')) {
-    const dynamic = args.some(a => a.toLowerCase().startsWith('dyn'));
+    const dynamic = mainArgs.some(a => a.toLowerCase().startsWith('dyn'));
     return makeResult(showMacTable(state, dynamic));
   }
 
@@ -1178,7 +1456,7 @@ export const showHandler: CommandHandler = (args, state, _raw, _negated) => {
 
   if (sub.startsWith('span') || sub === 'spanning-tree') {
     if (sub2 === 'vlan') {
-      const vid = parseInt(args[2] || '');
+      const vid = parseInt(mainArgs[2] || '');
       return makeResult(showSpanningTree(state, isNaN(vid) ? undefined : vid));
     }
     if (sub2 === '') return makeResult(showSpanningTree(state));
@@ -1186,7 +1464,7 @@ export const showHandler: CommandHandler = (args, state, _raw, _negated) => {
   }
 
   if (sub === 'cdp') {
-    const sub3 = (args[2] || '').toLowerCase();
+    const sub3 = (mainArgs[2] || '').toLowerCase();
     const detail = sub3.startsWith('det') || sub2.startsWith('det');
     if (sub2.startsWith('nei') || sub2 === 'neighbors') {
       return makeResult(showCdpNeighbors(state, detail));
@@ -1202,7 +1480,7 @@ export const showHandler: CommandHandler = (args, state, _raw, _negated) => {
   if (sub.startsWith('log') || sub === 'logging') return makeResult(showLogging(state));
 
   if (sub === 'ntp') {
-    const sub3 = (args[1] || '').toLowerCase();
+    const sub3 = (mainArgs[1] || '').toLowerCase();
     if (sub3.startsWith('sta') || sub3 === 'status') return makeResult(showNtpStatus(state));
     return makeResult(showNtpStatus(state));
   }
@@ -1226,6 +1504,10 @@ export const showHandler: CommandHandler = (args, state, _raw, _negated) => {
   }
 
   if (sub.startsWith('env') || sub === 'environment') return makeResult(showEnvironment(state));
+
+  if (sub === 'sessions') return makeResult(showSessions(state));
+
+  if (sub.startsWith('term') || sub === 'terminal') return makeResult(showTerminal(state));
 
   return {
     output: [out(`% Unknown 'show ${args.join(' ')}' command`, 'error')]

@@ -182,6 +182,9 @@ export interface DeviceState {
   startupConfig?: Omit<DeviceState, 'startupConfig'>;
   unsavedChanges: boolean;
   bootTime: number; currentTime: number;
+  activeDebugs: string[];
+  terminalLength: number;
+  terminalWidth: number;
 }
 
 export interface TerminalLine {

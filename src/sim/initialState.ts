@@ -393,7 +393,10 @@ export function createInitialState(): DeviceState {
     syslogLevel: 6,
     unsavedChanges: false,
     bootTime,
-    currentTime: now
+    currentTime: now,
+    activeDebugs: [],
+    terminalLength: 24,
+    terminalWidth: 80
   };
 }
 
