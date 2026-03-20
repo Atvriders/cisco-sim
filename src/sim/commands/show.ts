@@ -4235,7 +4235,18 @@ export const showHandler: CommandHandler = (args, state, _raw, _negated) => {
       if (sub3.startsWith('bin') || sub3 === 'binding') return makeResult(showIpDhcpBinding(state));
       if (sub3.startsWith('pool') || sub3 === 'pool') return makeResult(showIpDhcpPool(state));
       if (sub3.startsWith('con') || sub3 === 'conflict') return makeResult(showIpDhcpConflict(state));
+      if (sub3.startsWith('ser') || sub3 === 'server') {
+        const sub4 = (mainArgs[3] || '').toLowerCase();
+        if (sub4.startsWith('stat') || sub4 === 'statistics') return makeResult(showIpDhcpServerStatistics(state));
+        return makeResult(showIpDhcpServerStatistics(state));
+      }
       return makeResult(showIpDhcpBinding(state));
+    }
+    if (sub2 === 'nat') {
+      const sub3 = (mainArgs[2] || '').toLowerCase();
+      if (sub3.startsWith('tran') || sub3 === 'translations') return makeResult(showIpNatTranslations(state));
+      if (sub3.startsWith('stat') || sub3 === 'statistics') return makeResult(showIpNatStatistics(state));
+      return makeResult(showIpNatTranslations(state));
     }
     if (sub2 === 'arp') {
       const sub3 = (mainArgs[2] || '').toLowerCase();
@@ -4451,6 +4462,11 @@ export const showHandler: CommandHandler = (args, state, _raw, _negated) => {
       return makeResult(showMonitorSession(state, isNaN(sid) ? undefined : sid));
     }
     return makeResult(showMonitorSession(state));
+  }
+
+  if (sub === 'standby') {
+    if (sub2.startsWith('bri') || sub2 === 'brief') return makeResult(showStandbyBrief(state));
+    return makeResult(showStandbyDetail(state));
   }
 
   if (sub === 'vtp') {
