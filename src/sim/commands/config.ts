@@ -1054,6 +1054,130 @@ export const configHandler: CommandHandler = (args, state, raw, negated) => {
     return { output: [], newState: { unsavedChanges: true } };
   }
 
+
+  // AAA commands
+  if (cmd === 'aaa') {
+    const sub = (args[1] || '').toLowerCase();
+    if (sub === 'new-model') {
+      return { output: [], newState: { aaa: { ...state.aaa, newModel: !negated }, unsavedChanges: true } };
+    }
+    if (sub === 'authentication') {
+      const sub2 = (args[2] || '').toLowerCase();
+      if (sub2 === 'login' || sub2 === 'enable') {
+        const listName = args[3] || 'default';
+        if (negated) {
+          const newLists = state.aaa.authenticationLists.filter(l => l.name !== listName);
+          return { output: [], newState: { aaa: { ...state.aaa, authenticationLists: newLists }, unsavedChanges: true } };
+        }
+        const methods = args.slice(4);
+        const newLists = state.aaa.authenticationLists.filter(l => l.name !== listName);
+        newLists.push({ name: listName, methods });
+        return { output: [], newState: { aaa: { ...state.aaa, authenticationLists: newLists }, unsavedChanges: true } };
+      }
+    }
+    if (sub === 'authorization') {
+      const sub2 = (args[2] || '').toLowerCase();
+      const listName = args[3] || 'default';
+      if (negated) {
+        const newLists = state.aaa.authorizationLists.filter(l => l.name !== listName);
+        return { output: [], newState: { aaa: { ...state.aaa, authorizationLists: newLists }, unsavedChanges: true } };
+      }
+      const methods = args.slice(4);
+      const newLists = state.aaa.authorizationLists.filter(l => l.name !== listName);
+      newLists.push({ name: listName, type: sub2, methods });
+      return { output: [], newState: { aaa: { ...state.aaa, authorizationLists: newLists }, unsavedChanges: true } };
+    }
+    if (sub === 'accounting') {
+      const sub2 = (args[2] || '').toLowerCase();
+      const listName = args[3] || 'default';
+      if (negated) {
+        const newLists = state.aaa.accountingLists.filter(l => l.name !== listName);
+        return { output: [], newState: { aaa: { ...state.aaa, accountingLists: newLists }, unsavedChanges: true } };
+      }
+      const methods = args.slice(4);
+      const newLists = state.aaa.accountingLists.filter(l => l.name !== listName);
+      newLists.push({ name: listName, type: sub2, methods });
+      return { output: [], newState: { aaa: { ...state.aaa, accountingLists: newLists }, unsavedChanges: true } };
+    }
+    return { output: [], newState: { unsavedChanges: true } };
+  }
+
+  if (cmd === 'radius-server') {
+    // radius-server host <ip> key <k>  (legacy)
+    const sub = (args[1] || '').toLowerCase();
+    if (sub === 'host') {
+      const ip = args[2] || '';
+      const keyIdx = args.indexOf('key');
+      const key = keyIdx >= 0 ? args.slice(keyIdx + 1).join(' ') : '';
+      if (negated) {
+        const newServers = state.aaa.radiusServers.filter(s => s.ip !== ip);
+        return { output: [], newState: { aaa: { ...state.aaa, radiusServers: newServers }, unsavedChanges: true } };
+      }
+      const existing = state.aaa.radiusServers.find(s => s.ip === ip);
+      const newServer = { ip, authPort: 1645, acctPort: 1646, key: key || (existing?.key ?? '') };
+      const newServers = state.aaa.radiusServers.filter(s => s.ip !== ip);
+      newServers.push(newServer);
+      return { output: [], newState: { aaa: { ...state.aaa, radiusServers: newServers }, unsavedChanges: true } };
+    }
+    return { output: [], newState: { unsavedChanges: true } };
+  }
+
+  if (cmd === 'tacacs-server') {
+    const sub = (args[1] || '').toLowerCase();
+    if (sub === 'host') {
+      const ip = args[2] || '';
+      const keyIdx = args.indexOf('key');
+      const key = keyIdx >= 0 ? args.slice(keyIdx + 1).join(' ') : '';
+      if (negated) {
+        const newServers = state.aaa.tacacsServers.filter(s => s.ip !== ip);
+        return { output: [], newState: { aaa: { ...state.aaa, tacacsServers: newServers }, unsavedChanges: true } };
+      }
+      const newServers = state.aaa.tacacsServers.filter(s => s.ip !== ip);
+      newServers.push({ ip, key });
+      return { output: [], newState: { aaa: { ...state.aaa, tacacsServers: newServers }, unsavedChanges: true } };
+    }
+    return { output: [], newState: { unsavedChanges: true } };
+  }
+
+  // IP SLA commands — must come before the generic 'ip' fallthrough
+  if (cmd === 'ip' && (args[1] || '').toLowerCase() === 'sla') {
+    const sub2 = (args[2] || '').toLowerCase();
+    // ip sla schedule <id> life forever start-time now [recurring]
+    if (sub2 === 'schedule') {
+      const id = parseInt(args[3] || '');
+      if (isNaN(id)) return { output: [out('% Incomplete command.', 'error')] };
+      if (negated) {
+        const newSchedules = state.ipSlaSchedules.filter(s => s.id !== id);
+        return { output: [], newState: { ipSlaSchedules: newSchedules, unsavedChanges: true } };
+      }
+      const lifeIdx = args.indexOf('life');
+      const lifeVal = lifeIdx >= 0 ? args[lifeIdx + 1] : 'forever';
+      const life: 'forever' | number = lifeVal === 'forever' ? 'forever' : parseInt(lifeVal);
+      const startIdx = args.indexOf('start-time');
+      const startTime = startIdx >= 0 ? (args[startIdx + 1] || 'now') : 'now';
+      const recurring = args.includes('recurring');
+      const newSchedules = state.ipSlaSchedules.filter(s => s.id !== id);
+      newSchedules.push({ id, startTime, life, recurring });
+      return { output: [], newState: { ipSlaSchedules: newSchedules, unsavedChanges: true } };
+    }
+    // ip sla <id>  — create or enter entry
+    const id = parseInt(sub2);
+    if (!isNaN(id)) {
+      if (negated) {
+        const newSla = state.ipSla.filter(e => e.id !== id);
+        const newSchedules = state.ipSlaSchedules.filter(s => s.id !== id);
+        return { output: [], newState: { ipSla: newSla, ipSlaSchedules: newSchedules, unsavedChanges: true } };
+      }
+      const existing = state.ipSla.find(e => e.id === id);
+      if (!existing) {
+        const newEntry = { id, type: 'icmp-echo' as const, target: '', frequency: 60, timeout: 5000, threshold: 5000, history: [] };
+        return { output: [], newState: { ipSla: [...state.ipSla, newEntry], unsavedChanges: true } };
+      }
+      return { output: [], newState: { unsavedChanges: true } };
+    }
+    return { output: [], newState: { unsavedChanges: true } };
+  }
+
   void raw;
   return { output: [out(`% Unknown configuration command: ${args[0] || ''}`, 'error')] };
 };

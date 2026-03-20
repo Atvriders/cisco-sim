@@ -830,6 +830,199 @@ function showSpanningTree(state: DeviceState, vlanId?: number): string[] {
   return ls;
 }
 
+function showSpanningTreeSummary(state: DeviceState): string[] {
+  const ls: string[] = [];
+  const mode = (state as any).stpMode || 'rapid-pvst';
+  ls.push(`Switch is in ${mode} mode`);
+
+  // Determine which VLANs we are root for
+  const rootVlans = Object.values(state.spanningTree)
+    .filter(s => s.rootBridgeIsLocal)
+    .map(s => `VLAN${String(s.vlanId).padStart(4, '0')}`)
+    .join(', ');
+  if (rootVlans) ls.push(`Root bridge for: ${rootVlans}`);
+
+  ls.push('EtherChannel misconfig guard           is enabled');
+  ls.push('Extended system ID                     is enabled');
+  const portfastDefault = (state as any).stpPortfastDefault || false;
+  const bpduguardDefault = (state as any).stpBpduguardDefault || false;
+  const loopguardDefault = (state as any).stpLoopguardDefault || false;
+  const backbonefast = (state as any).stpBackbonefast || false;
+  ls.push(`Portfast Default                       is ${portfastDefault ? 'enabled' : 'disabled'}`);
+  ls.push(`PortFast BPDU Guard Default            is ${bpduguardDefault ? 'enabled' : 'disabled'}`);
+  ls.push('Portfast BPDU Filter Default           is disabled');
+  ls.push(`Loopguard Default                      is ${loopguardDefault ? 'enabled' : 'disabled'}`);
+  ls.push('UplinkFast                             is disabled');
+  ls.push(`BackboneFast                           is ${backbonefast ? 'enabled' : 'disabled'}`);
+  ls.push('Configured Pathcost method used is short');
+  ls.push('');
+
+  const header = `${padRight('Name', 23)}${padLeft('Blocking', 8)} ${padLeft('Listening', 9)} ${padLeft('Learning', 8)} ${padLeft('Forwarding', 10)} ${padLeft('STP Active', 10)}`;
+  const divider = `${'-'.repeat(22)} ${'-'.repeat(8)} ${'-'.repeat(9)} ${'-'.repeat(8)} ${'-'.repeat(10)} ${'-'.repeat(10)}`;
+  ls.push(header);
+  ls.push(divider);
+
+  const vids = Object.keys(state.spanningTree).map(Number).sort((a, b) => a - b);
+  let totBlocking = 0, totListening = 0, totLearning = 0, totForwarding = 0;
+
+  for (const vid of vids) {
+    const vlanIfaces = Object.values(state.interfaces).filter(i => {
+      if (i.id.startsWith('Vlan') || i.id.startsWith('Loopback')) return false;
+      if (i.switchportMode === 'trunk') return true;
+      return i.accessVlan === vid;
+    });
+    let blocking = 0, listening = 0, learning = 0, forwarding = 0;
+    for (const iface of vlanIfaces) {
+      const st = iface.spanningTree.state;
+      if (st === 'blocking') blocking++;
+      else if (st === 'listening') listening++;
+      else if (st === 'learning') learning++;
+      else if (st === 'forwarding') forwarding++;
+    }
+    const active = blocking + listening + learning + forwarding;
+    totBlocking += blocking; totListening += listening; totLearning += learning; totForwarding += forwarding;
+    const name = `VLAN${String(vid).padStart(4, '0')}`;
+    ls.push(`${padRight(name, 23)}${padLeft(String(blocking), 8)} ${padLeft(String(listening), 9)} ${padLeft(String(learning), 8)} ${padLeft(String(forwarding), 10)} ${padLeft(String(active), 10)}`);
+  }
+
+  ls.push(divider);
+  const totActive = totBlocking + totListening + totLearning + totForwarding;
+  ls.push(`${padRight(`${vids.length} vlans`, 23)}${padLeft(String(totBlocking), 8)} ${padLeft(String(totListening), 9)} ${padLeft(String(totLearning), 8)} ${padLeft(String(totForwarding), 10)} ${padLeft(String(totActive), 10)}`);
+  return ls;
+}
+
+function showSpanningTreeDetail(state: DeviceState): string[] {
+  const ls: string[] = [];
+  const mode = (state as any).stpMode || 'rapid-pvst';
+  const protocol = mode === 'pvst' ? 'ieee' : 'rstp compatible';
+  const vids = Object.keys(state.spanningTree).map(Number).sort((a, b) => a - b);
+
+  for (const vid of vids) {
+    const stp = state.spanningTree[vid];
+    if (!stp) continue;
+    const vlanName = `VLAN${String(vid).padStart(4, '0')}`;
+    ls.push(` ${vlanName} is executing the ${protocol} Spanning Tree protocol`);
+    ls.push(`  Bridge Identifier has priority ${stp.localBridgePriority - vid}, sysid ${vid}, address ${stp.localBridgeMac}`);
+    ls.push(`  Configured hello time ${stp.helloTime}, max age ${stp.maxAge}, forward delay ${stp.forwardDelay}, transmit hold-count 6`);
+    if (stp.rootBridgeIsLocal) {
+      ls.push(`  We are the root of the spanning tree`);
+    } else {
+      ls.push(`  Current root has priority ${stp.rootBridgePriority}, address ${stp.rootBridgeMac}`);
+      if (stp.rootPort) ls.push(`  Root port is ${shortIfName(stp.rootPort)}, cost of root path is ${stp.rootCost}`);
+    }
+    ls.push(`  Topology change flag not set, detected flag not set`);
+    ls.push(`  Number of topology changes 2 last change occurred 00:45:12 ago`);
+    ls.push(`          from GigabitEthernet0/1`);
+    ls.push(`  Times:  hold 1, topology change 35, notification 2`);
+    ls.push(`          hello ${stp.helloTime}, max age ${stp.maxAge}, forward delay ${stp.forwardDelay}`);
+    ls.push(`  Timers: hello 0, topology change 0, notification 0, aging 300`);
+    ls.push('');
+
+    const vlanIfaces = Object.values(state.interfaces).filter(i => {
+      if (i.id.startsWith('Vlan') || i.id.startsWith('Loopback')) return false;
+      if (i.switchportMode === 'trunk') return true;
+      return i.accessVlan === vid;
+    });
+    for (const iface of vlanIfaces) {
+      const stp_if = iface.spanningTree;
+      const role = stp_if.role === 'designated' ? 'designated' : stp_if.role === 'root' ? 'root' : stp_if.role === 'alternate' ? 'alternate' : 'disabled';
+      const sts = stp_if.state === 'forwarding' ? 'forwarding' : stp_if.state === 'blocking' ? 'blocking' : stp_if.state === 'learning' ? 'learning' : stp_if.state === 'listening' ? 'listening' : 'disabled';
+      const cost = stp_if.cost || (iface.id.startsWith('Gi') ? 4 : 19);
+      const prio = stp_if.priority || 128;
+      const portNum = iface.port;
+      const ifFullName = iface.id.replace(/^Fa(\d)/, 'FastEthernet$1').replace(/^Gi(\d)/, 'GigabitEthernet$1');
+      ls.push(` Port ${portNum} (${ifFullName}) of ${vlanName} is ${role} ${sts}`);
+      ls.push(`   Port path cost ${cost}, Port priority ${prio}, Port Identifier ${prio}.${portNum}.`);
+      ls.push(`   Designated root has priority ${stp.rootBridgePriority}, address ${stp.rootBridgeMac}`);
+      ls.push(`   Designated bridge has priority ${stp.rootBridgePriority}, address ${stp.rootBridgeMac}`);
+      ls.push(`   Designated port id is ${prio}.${portNum}, designated path cost 0`);
+      ls.push(`   Timers: message age 0, forward delay 0, hold 0`);
+      ls.push(`   Number of transitions to forwarding state: 1`);
+      ls.push(`   Link type is point-to-point by default`);
+      ls.push(`   RSTP role is ${role.charAt(0).toUpperCase() + role.slice(1)}`);
+      ls.push(`   BPDU: sent 1356, received 0`);
+      ls.push('');
+    }
+  }
+  return ls;
+}
+
+function showSpanningTreeMst(state: DeviceState): string[] {
+  const ls: string[] = [];
+  const mst = (state as any).mstConfig as { name: string; revision: number; instances: { id: number; vlans: number[]; rootBridgeMac: string; rootBridgePriority: number; localBridgePriority: number; rootPort?: string; rootCost: number }[] };
+  if (!mst || !mst.instances) {
+    ls.push('% No MST configuration found');
+    return ls;
+  }
+
+  const physicalIfaces = Object.values(state.interfaces).filter(i =>
+    !i.id.startsWith('Vlan') && !i.id.startsWith('Loopback') && i.switchportMode === 'trunk'
+  );
+
+  for (const inst of mst.instances) {
+    const vlanStr = inst.vlans.sort((a: number, b: number) => a - b).join(',');
+    const instLabel = `MST${inst.id}`;
+    ls.push(`##### ${padRight(instLabel, 9)}   vlans mapped:   ${vlanStr}`);
+    const sysId = inst.id;
+    ls.push(`Bridge         address ${inst.rootBridgeMac}  priority      ${inst.localBridgePriority} (${inst.localBridgePriority} sysid ${sysId})`);
+    ls.push(`Root           this switch for the ${inst.id === 0 ? 'CIST' : instLabel}`);
+    ls.push(`Operational    hello time 2 , forward delay 15, max age 20, txholdcount 6`);
+    ls.push(`Configured     hello time 2 , forward delay 15, max age 20, max hops    20`);
+    ls.push('');
+    ls.push(`${padRight('Interface', 17)}${padRight('Role', 5)}${padRight('Sts', 4)}${padRight('Cost', 10)}${padRight('Prio.Nbr', 9)}Type`);
+    ls.push(`${'-'.repeat(16)} ${'-'.repeat(4)} ${'-'.repeat(3)} ${'-'.repeat(9)} ${'-'.repeat(8)} ${'-'.repeat(32)}`);
+
+    for (const iface of physicalIfaces) {
+      const stp_if = iface.spanningTree;
+      const role = stp_if.role === 'designated' ? 'Desg' : stp_if.role === 'root' ? 'Root' : stp_if.role === 'alternate' ? 'Altn' : 'Dsbl';
+      const sts = stp_if.state === 'forwarding' ? 'FWD' : stp_if.state === 'blocking' ? 'BLK' : 'DSB';
+      const cost = iface.id.startsWith('Gi') ? 20000 : 200000;
+      const prio = stp_if.priority || 128;
+      const portNum = iface.port + (iface.id.startsWith('Gi') ? 24 : 0);
+      ls.push(`${padRight(shortIfName(iface.id), 17)}${padRight(role, 5)}${padRight(sts, 4)}${padRight(String(cost), 10)}${padRight(`${prio}.${portNum}`, 9)}P2p`);
+    }
+    ls.push('');
+  }
+  return ls;
+}
+
+function showSpanningTreeMstConfig(state: DeviceState): string[] {
+  const ls: string[] = [];
+  const mst = (state as any).mstConfig as { name: string; revision: number; instances: { id: number; vlans: number[] }[] };
+  if (!mst) {
+    ls.push('% No MST configuration found');
+    return ls;
+  }
+  ls.push(`Name      [${mst.name}]`);
+  ls.push(`Revision  ${mst.revision}     Instances configured ${mst.instances.length}`);
+  ls.push('');
+  ls.push('Instance  Vlans mapped');
+  ls.push(`${'--------'}  ${'---------------------------------------------------------------------'}`);
+  for (const inst of mst.instances) {
+    const vlanStr = inst.vlans.sort((a: number, b: number) => a - b).join(',');
+    ls.push(`${padLeft(String(inst.id), 8)}  ${vlanStr}`);
+  }
+  ls.push('-------------------------------------------------------------------------------');
+  return ls;
+}
+
+function showSpanningTreeInconsistentPorts(_state: DeviceState): string[] {
+  return [
+    'Name                 Interface                Inconsistency',
+    '-------------------- ------------------------ ------------------',
+    'Number of inconsistent ports (segments) in the system : 0',
+  ];
+}
+
+function showSpanningTreeBlockedPorts(_state: DeviceState): string[] {
+  return [
+    'Name                 Blocked Interfaces List',
+    '-------------------- ------------------------------------',
+    'Number of blocked ports (segments) in the system : 0',
+  ];
+}
+
+
 function showCdpNeighbors(state: DeviceState, detail: boolean): string[] {
   const ls: string[] = [];
   if (!state.cdpEnabled) {
@@ -1697,6 +1890,188 @@ function showIpOspfDetail(state: DeviceState): string[] {
   return ls;
 }
 
+
+function vlansToString(vlans: number[]): string {
+  if (vlans.length === 0) return '';
+  const sorted = [...vlans].sort((a, b) => a - b);
+  const ranges: string[] = [];
+  let start = sorted[0];
+  let prev = sorted[0];
+  for (let i = 1; i < sorted.length; i++) {
+    if (sorted[i] === prev + 1) { prev = sorted[i]; }
+    else {
+      ranges.push(start === prev ? String(start) : `${start}-${prev}`);
+      start = sorted[i]; prev = sorted[i];
+    }
+  }
+  ranges.push(start === prev ? String(start) : `${start}-${prev}`);
+  return ranges.join(',');
+}
+
+function showIpDhcpSnooping(state: DeviceState): string[] {
+  const s = state.dhcpSnooping;
+  const ls: string[] = [];
+  ls.push(`Switch DHCP snooping is ${s.enabled ? 'enabled' : 'disabled'}`);
+  ls.push('Switch DHCP gleaning is disabled');
+  ls.push('DHCP snooping is configured on following VLANs:');
+  ls.push(s.vlans.length > 0 ? vlansToString(s.vlans) : 'none');
+  ls.push('DHCP snooping is operational on following VLANs:');
+  ls.push(s.enabled && s.vlans.length > 0 ? vlansToString(s.vlans) : 'none');
+  ls.push('Smartlog is disabled globally');
+  ls.push('Option 82 on untrusted port is not allowed');
+  ls.push(` Insertion of option 82 is ${s.option82 ? 'enabled' : 'disabled'}`);
+  ls.push(' circuit-id default format: vlan-mod-port');
+  ls.push(' remote-id: 0019.e8a2.3c00 (MAC)');
+  ls.push('Verification of hwaddr field is enabled');
+  ls.push('Verification of giaddr field is enabled');
+  ls.push('DHCP snooping trust/rate is configured on the following Interfaces:');
+  ls.push('');
+  ls.push('Interface                  Trusted    Allow untrusted reply    Rate limit (pps)');
+  ls.push('-----------------------    -------    ---------------------    ----------------');
+  const allTrusted = new Set(s.trustedPorts);
+  const rateLimitMap = new Map(s.rateLimits.map(r => [r.port, r.pps]));
+  const physIfaces = Object.values(state.interfaces)
+    .filter(i => i.id.startsWith('Fa') || i.id.startsWith('Gi'))
+    .filter(i => allTrusted.has(i.id) || rateLimitMap.has(i.id));
+  const sortedIfaces = [...physIfaces].sort((a, b) => {
+    if (a.id.startsWith('Gi') && b.id.startsWith('Fa')) return 1;
+    if (a.id.startsWith('Fa') && b.id.startsWith('Gi')) return -1;
+    return a.port - b.port;
+  });
+  for (const iface of sortedIfaces) {
+    const fullName = expandIfNameFull(iface.id);
+    const trusted = allTrusted.has(iface.id) ? 'yes' : 'no';
+    const rateLimit = rateLimitMap.has(iface.id) ? String(rateLimitMap.get(iface.id)) : 'unlimited';
+    ls.push(`${padRight(fullName, 27)}${padRight(trusted, 11)}${padRight('yes', 25)}${rateLimit}`);
+  }
+  return ls;
+}
+
+function showIpDhcpSnoopingStatistics(_state: DeviceState): string[] {
+  return [
+    ' Packets Forwarded                                     = 245',
+    ' Packets Dropped                                       = 0',
+    ' Packets Dropped From untrusted ports                  = 0',
+  ];
+}
+
+function showIpDhcpSnoopingBinding(state: DeviceState): string[] {
+  const ls: string[] = [];
+  ls.push('MacAddress          IpAddress        Lease(sec)  Type           VLAN  Interface');
+  ls.push('------------------  ---------------  ----------  -------------  ----  -----------------');
+  for (const b of state.dhcpBindings) {
+    const vlanNum = b.interface.startsWith('Vlan') ? b.interface.replace('Vlan', '') : '?';
+    ls.push(`${padRight(b.mac, 20)}${padRight(b.ip, 17)}${padRight('86400', 12)}${padRight('dhcp-snooping', 15)}${padRight(vlanNum, 6)}${b.interface}`);
+  }
+  ls.push(`Total number of bindings: ${state.dhcpBindings.length}`);
+  return ls;
+}
+
+function showIpArpInspection(state: DeviceState): string[] {
+  const d = state.dai;
+  const ls: string[] = [];
+  ls.push(' Source Mac Validation      : Disabled');
+  ls.push(' Destination Mac Validation : Disabled');
+  ls.push(' IP-MAC Validation          : Disabled');
+  ls.push('');
+  ls.push(' Vlan     Configuration    Operation   ACL Match          Static ACL');
+  ls.push(' ----     -------------    ---------   ---------          ----------');
+  for (const vid of d.vlans) {
+    ls.push(`   ${padLeft(String(vid), 2)}     ${padRight('Enabled', 17)}${padRight('Active', 12)}`);
+  }
+  if (d.vlans.length === 0) ls.push('');
+  ls.push('');
+  ls.push(' Vlan     Forwarded        Dropped      DHCP Drops      ACL Drops');
+  ls.push(' ----     ---------        -------      ----------      ---------');
+  const fwdMap: Record<number, number> = { 10: 245, 20: 123 };
+  for (const vid of d.vlans) {
+    const fwd = fwdMap[vid] ?? 0;
+    ls.push(`   ${padLeft(String(vid), 2)}           ${padLeft(String(fwd), 3)}              0               0              0`);
+  }
+  return ls;
+}
+
+function showIpArpInspectionInterfaces(state: DeviceState): string[] {
+  const ls: string[] = [];
+  ls.push(' Interface        Trust State     Rate (pps)    Burst Interval');
+  ls.push(' ---------------  -----------     ----------    --------------');
+  const trustedSet = new Set(state.dai.trustedPorts);
+  const physIfaces = Object.values(state.interfaces)
+    .filter(i => i.id.startsWith('Fa') || i.id.startsWith('Gi'))
+    .sort((a, b) => {
+      if (a.id.startsWith('Gi') && b.id.startsWith('Fa')) return 1;
+      if (a.id.startsWith('Fa') && b.id.startsWith('Gi')) return -1;
+      return a.port - b.port;
+    });
+  for (const iface of physIfaces) {
+    const trusted = trustedSet.has(iface.id) ? 'Trusted' : 'Untrusted';
+    ls.push(` ${padRight(shortIfName(iface.id), 17)}${padRight(trusted, 16)}${padRight('None', 14)}N/A`);
+  }
+  return ls;
+}
+
+function showIpVerifySource(state: DeviceState): string[] {
+  const ls: string[] = [];
+  ls.push('Interface  Filter-type  Filter-mode  IP-address       Mac-address        Vlan');
+  ls.push('---------  -----------  -----------  ---------------  -----------------  ----');
+  for (const binding of state.ipSourceGuardBindings) {
+    ls.push(`${padRight(shortIfName(binding.interface), 11)}${padRight('ip', 13)}${padRight('active', 13)}${padRight(binding.ip, 17)}${padRight(binding.mac, 19)}${binding.vlan}`);
+  }
+  for (const b of state.dhcpBindings) {
+    const vlanNum = parseInt(b.interface.replace('Vlan', '') || '0');
+    const portsForVlan = Object.values(state.interfaces)
+      .filter(i => i.accessVlan === vlanNum && i.lineState === 'up' && (i.id.startsWith('Fa') || i.id.startsWith('Gi')));
+    for (const iface of portsForVlan) {
+      ls.push(`${padRight(shortIfName(iface.id), 11)}${padRight('ip', 13)}${padRight('active', 13)}${padRight(b.ip, 17)}${padRight(b.mac, 19)}${vlanNum}`);
+    }
+  }
+  return ls;
+}
+
+function showPortSecurityInterface(state: DeviceState, ifId: string): string[] {
+  const iface = state.interfaces[ifId];
+  if (!iface) return [`% Interface ${ifId} not found`];
+  const ps = iface.portSecurity;
+  const ls: string[] = [];
+  ls.push(`Port Security              : ${ps.enabled ? 'Enabled' : 'Disabled'}`);
+  let portStatus = 'Secure-up';
+  if (iface.lineState === 'err-disabled') portStatus = 'Secure-shutdown';
+  else if (!ps.enabled) portStatus = 'Secure-down';
+  ls.push(`Port Status                : ${portStatus}`);
+  ls.push(`Violation Mode             : ${ps.violation.charAt(0).toUpperCase() + ps.violation.slice(1)}`);
+  ls.push(`Aging Time                 : 0 mins`);
+  ls.push(`Aging Type                 : Absolute`);
+  ls.push(`SecureStatic Address Aging : Disabled`);
+  ls.push(`Maximum MAC Addresses      : ${ps.maxMacAddresses}`);
+  ls.push(`Total MAC Addresses        : ${ps.learnedAddresses.length}`);
+  ls.push(`Configured MAC Addresses   : 0`);
+  ls.push(`Sticky MAC Addresses       : ${ps.stickyLearning ? ps.learnedAddresses.length : 0}`);
+  const lastMac = ps.learnedAddresses.length > 0 ? `${ps.learnedAddresses[ps.learnedAddresses.length - 1]}:${iface.accessVlan}` : '0000.0000.0000:0';
+  ls.push(`Last Source Address:Vlan   : ${lastMac}`);
+  ls.push(`Security Violation Count   : 0`);
+  return ls;
+}
+
+function showPortSecurityAddress(state: DeviceState): string[] {
+  const ls: string[] = [];
+  ls.push('               Secure Mac Address Table');
+  ls.push('-----------------------------------------------------------------------------');
+  ls.push('Vlan    Mac Address       Type                          Ports   Remaining Age');
+  ls.push('                                                                   (mins)');
+  ls.push('----    -----------       ----                          -----   -------------');
+  for (const iface of Object.values(state.interfaces)) {
+    if (!iface.portSecurity.enabled || iface.portSecurity.learnedAddresses.length === 0) continue;
+    for (const mac of iface.portSecurity.learnedAddresses) {
+      const typeStr = iface.portSecurity.stickyLearning ? 'SecureSticky' : 'SecureDynamic';
+      ls.push(`  ${padLeft(String(iface.accessVlan), 2)}    ${mac}    ${padRight(typeStr, 30)}${shortIfName(iface.id)}       -`);
+    }
+  }
+  ls.push('-----------------------------------------------------------------------------');
+  ls.push('Total Addresses in System (excluding one mac per port)     : 0');
+  ls.push('Max Addresses limit in System (excluding one mac per port) : 4096');
+  return ls;
+}
+
 function showEnvironment(state: DeviceState): string[] {
   return [
     `${state.hostname} SYSTEM ENVIRONMENT`,
@@ -2028,10 +2403,31 @@ export const showHandler: CommandHandler = (args, state, _raw, _negated) => {
     if (sub2.startsWith('acc') || sub2 === 'access-lists') return makeResult(showIpAccessLists(state));
     if (sub2 === 'dhcp') {
       const sub3 = (mainArgs[2] || '').toLowerCase();
+      if (sub3 === 'snooping') {
+        const sub4 = (mainArgs[3] || '').toLowerCase();
+        if (sub4.startsWith('bin') || sub4 === 'binding') return makeResult(showIpDhcpSnoopingBinding(state));
+        if (sub4.startsWith('stat') || sub4 === 'statistics') return makeResult(showIpDhcpSnoopingStatistics(state));
+        // show ip dhcp snooping (no sub4)
+        return makeResult(showIpDhcpSnooping(state));
+      }
       if (sub3.startsWith('bin') || sub3 === 'binding') return makeResult(showIpDhcpBinding(state));
       if (sub3.startsWith('pool') || sub3 === 'pool') return makeResult(showIpDhcpPool(state));
       if (sub3.startsWith('con') || sub3 === 'conflict') return makeResult(showIpDhcpConflict(state));
       return makeResult(showIpDhcpBinding(state));
+    }
+    if (sub2 === 'arp') {
+      const sub3 = (mainArgs[2] || '').toLowerCase();
+      if (sub3 === 'inspection') {
+        const sub4 = (mainArgs[3] || '').toLowerCase();
+        if (sub4.startsWith('int') || sub4 === 'interfaces') return makeResult(showIpArpInspectionInterfaces(state));
+        return makeResult(showIpArpInspection(state));
+      }
+      return makeResult(showArp(state));
+    }
+    if (sub2 === 'verify') {
+      const sub3 = (mainArgs[2] || '').toLowerCase();
+      if (sub3.startsWith('sou') || sub3 === 'source') return makeResult(showIpVerifySource(state));
+      return makeResult(showIpVerifySource(state));
     }
     if (sub2 === 'ssh') return makeResult(showIpSsh(state));
     if (sub2 === 'traffic') return makeResult(showIpTraffic(state));
@@ -2052,6 +2448,31 @@ export const showHandler: CommandHandler = (args, state, _raw, _negated) => {
   if (sub === 'arp') return makeResult(showArp(state));
 
   if (sub.startsWith('span') || sub === 'spanning-tree') {
+    // show spanning-tree summary
+    if (sub2 === 'summary') {
+      return makeResult(showSpanningTreeSummary(state));
+    }
+    // show spanning-tree detail
+    if (sub2 === 'detail') {
+      return makeResult(showSpanningTreeDetail(state));
+    }
+    // show spanning-tree mst configuration
+    if (sub2 === 'mst') {
+      const sub3 = (mainArgs[3] || '').toLowerCase();
+      if (sub3 === 'configuration') {
+        return makeResult(showSpanningTreeMstConfig(state));
+      }
+      return makeResult(showSpanningTreeMst(state));
+    }
+    // show spanning-tree inconsistentports
+    if (sub2 === 'inconsistentports') {
+      return makeResult(showSpanningTreeInconsistentPorts(state));
+    }
+    // show spanning-tree blockedports
+    if (sub2 === 'blockedports') {
+      return makeResult(showSpanningTreeBlockedPorts(state));
+    }
+    // show spanning-tree vlan <id>
     if (sub2 === 'vlan') {
       const vid = parseInt(mainArgs[2] || '');
       return makeResult(showSpanningTree(state, isNaN(vid) ? undefined : vid));
@@ -2120,7 +2541,19 @@ export const showHandler: CommandHandler = (args, state, _raw, _negated) => {
 
   if (sub.startsWith('ether') || sub === 'etherchannel') return makeResult(showEtherchannelSummary(state));
 
-  if (sub.startsWith('port') || sub === 'port-security') return makeResult(showPortSecurity(state));
+  if (sub.startsWith('port') || sub === 'port-security') {
+    if (sub2.startsWith('int') || sub2 === 'interface') {
+      const rest = mainArgs.slice(2).join('');
+      if (!rest) return makeResult(showPortSecurity(state));
+      const ifId = resolveInterface(rest, state);
+      if (!ifId) return { output: [out('% Invalid interface specified', 'error')] };
+      return makeResult(showPortSecurityInterface(state, ifId));
+    }
+    if (sub2.startsWith('add') || sub2 === 'address') {
+      return makeResult(showPortSecurityAddress(state));
+    }
+    return makeResult(showPortSecurity(state));
+  }
 
   if (sub.startsWith('priv') || sub === 'privilege') return makeResult(showPrivilege(state));
 

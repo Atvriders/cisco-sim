@@ -472,5 +472,117 @@ export const ifConfigHandler: CommandHandler = (args, state, _raw, negated) => {
     return { output: [out('% Unknown lldp command', 'error')] };
   }
 
+  if (cmd === 'cdp') {
+    const sub = (args[1] || '').toLowerCase();
+    if (sub === 'enable' || sub === '') {
+      return updateIface({ cdpEnabled: !negated });
+    }
+    return { output: [out('% Unknown cdp interface command', 'error')] };
+  }
+
+  if (cmd === 'ip' && (args[1] || '').toLowerCase() === 'nat') {
+    const natSub = (args[2] || '').toLowerCase();
+    if (natSub === 'inside') {
+      if (negated) {
+        return {
+          output: [],
+          newState: {
+            natConfig: { ...state.natConfig, insideInterfaces: state.natConfig.insideInterfaces.filter(i => i !== ifId) },
+            unsavedChanges: true
+          }
+        };
+      }
+      return {
+        output: [],
+        newState: {
+          natConfig: { ...state.natConfig, insideInterfaces: [...state.natConfig.insideInterfaces.filter(i => i !== ifId), ifId] },
+          unsavedChanges: true
+        }
+      };
+    }
+    if (natSub === 'outside') {
+      if (negated) {
+        return {
+          output: [],
+          newState: {
+            natConfig: { ...state.natConfig, outsideInterfaces: state.natConfig.outsideInterfaces.filter(i => i !== ifId) },
+            unsavedChanges: true
+          }
+        };
+      }
+      return {
+        output: [],
+        newState: {
+          natConfig: { ...state.natConfig, outsideInterfaces: [...state.natConfig.outsideInterfaces.filter(i => i !== ifId), ifId] },
+          unsavedChanges: true
+        }
+      };
+    }
+  }
+
+  if (cmd === 'standby') {
+    const groupNum = parseInt(args[1] || '0');
+    const sub = (args[2] || '').toLowerCase();
+
+    if (negated && !args[2]) {
+      return {
+        output: [],
+        newState: { hsrpGroups: state.hsrpGroups.filter(g => !(g.interfaceId === ifId && g.groupNumber === groupNum)), unsavedChanges: true }
+      };
+    }
+
+    const existingGroup = state.hsrpGroups.find(g => g.interfaceId === ifId && g.groupNumber === groupNum);
+    const baseGroup = existingGroup || {
+      interfaceId: ifId,
+      groupNumber: groupNum,
+      virtualIp: '',
+      priority: 100,
+      preempt: false,
+      state: 'Init' as const,
+      activeRouter: 'unknown',
+      standbyRouter: 'unknown',
+      helloTime: 3,
+      holdTime: 10,
+    };
+
+    if (sub === 'ip') {
+      const vip = args[3];
+      if (!vip) return { output: [out('% Incomplete command.', 'error')] };
+      const updatedGroup = { ...baseGroup, virtualIp: vip, state: 'Active' as const, activeRouter: iface.ipAddresses[0]?.address || 'local' };
+      const newGroups = [...state.hsrpGroups.filter(g => !(g.interfaceId === ifId && g.groupNumber === groupNum)), updatedGroup];
+      return { output: [], newState: { hsrpGroups: newGroups, unsavedChanges: true } };
+    }
+
+    if (sub === 'priority') {
+      const pri = parseInt(args[3] || '100');
+      const updatedGroup = { ...baseGroup, priority: pri };
+      const newGroups = [...state.hsrpGroups.filter(g => !(g.interfaceId === ifId && g.groupNumber === groupNum)), updatedGroup];
+      return { output: [], newState: { hsrpGroups: newGroups, unsavedChanges: true } };
+    }
+
+    if (sub === 'preempt') {
+      const updatedGroup = { ...baseGroup, preempt: !negated };
+      const newGroups = [...state.hsrpGroups.filter(g => !(g.interfaceId === ifId && g.groupNumber === groupNum)), updatedGroup];
+      return { output: [], newState: { hsrpGroups: newGroups, unsavedChanges: true } };
+    }
+
+    if (sub === 'timers') {
+      const hello = parseInt(args[3] || '3');
+      const hold = parseInt(args[4] || '10');
+      const updatedGroup = { ...baseGroup, helloTime: hello, holdTime: hold };
+      const newGroups = [...state.hsrpGroups.filter(g => !(g.interfaceId === ifId && g.groupNumber === groupNum)), updatedGroup];
+      return { output: [], newState: { hsrpGroups: newGroups, unsavedChanges: true } };
+    }
+
+    if (sub === 'authentication') {
+      const auth = args[3];
+      const updatedGroup = { ...baseGroup, authentication: negated ? undefined : auth };
+      const newGroups = [...state.hsrpGroups.filter(g => !(g.interfaceId === ifId && g.groupNumber === groupNum)), updatedGroup];
+      return { output: [], newState: { hsrpGroups: newGroups, unsavedChanges: true } };
+    }
+
+    return { output: [out(`% Unknown standby subcommand: ${sub}`, 'error')] };
+  }
+
   return { output: [out(`% Unknown interface command: ${args[0] || ''}`, 'error')] };
 };
