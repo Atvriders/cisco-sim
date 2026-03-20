@@ -96,6 +96,9 @@ export const configHandler: CommandHandler = (args, state, raw, negated) => {
     if (sub === 'dhcp') {
       return { output: [], newState: { dhcpEnabled: !negated, unsavedChanges: true } };
     }
+    if (sub === 'tcp-small-servers' || sub === 'nagle') {
+      return { output: [], newState: { unsavedChanges: true } };
+    }
     return { output: [out('% Unknown service command', 'error')] };
   }
 
@@ -966,6 +969,89 @@ export const configHandler: CommandHandler = (args, state, raw, negated) => {
       }
     }
     return { output: [out(`% Unknown no command: ${raw}`, 'error')] };
+  }
+
+  if (cmd === 'vtp') {
+    const sub = (args[1] || '').toLowerCase();
+    if (sub === 'domain') {
+      if (negated) return { output: [], newState: { vtp: { ...state.vtp, domain: '' }, unsavedChanges: true } };
+      const name = args[2];
+      if (!name) return { output: [out('% Incomplete command.', 'error')] };
+      return { output: [], newState: { vtp: { ...state.vtp, domain: name }, unsavedChanges: true } };
+    }
+    if (sub === 'mode') {
+      const mode = (args[2] || '').toLowerCase();
+      const validModes = ['server', 'client', 'transparent', 'off'];
+      if (!validModes.includes(mode)) return { output: [out('% Invalid VTP mode. Valid modes: server, client, transparent, off', 'error')] };
+      return { output: [], newState: { vtp: { ...state.vtp, mode: mode as 'server' | 'client' | 'transparent' | 'off' }, unsavedChanges: true } };
+    }
+    if (sub === 'version') {
+      const ver = parseInt(args[2] || '');
+      if (ver !== 1 && ver !== 2 && ver !== 3) return { output: [out('% Invalid VTP version. Valid versions: 1, 2, 3', 'error')] };
+      return { output: [], newState: { vtp: { ...state.vtp, version: ver as 1 | 2 | 3 }, unsavedChanges: true } };
+    }
+    if (sub === 'password') {
+      if (negated) return { output: [], newState: { vtp: { ...state.vtp, password: undefined }, unsavedChanges: true } };
+      const pwd = args[2];
+      if (!pwd) return { output: [out('% Incomplete command.', 'error')] };
+      return { output: [], newState: { vtp: { ...state.vtp, password: pwd }, unsavedChanges: true } };
+    }
+    if (sub === 'pruning') {
+      return { output: [], newState: { vtp: { ...state.vtp, pruningEnabled: !negated }, unsavedChanges: true } };
+    }
+    return { output: [out('% Unknown vtp command', 'error')] };
+  }
+
+  if (cmd === 'snmp-server') {
+    const sub = (args[1] || '').toLowerCase();
+    if (sub === 'community') {
+      const commName = args[2];
+      if (!commName) return { output: [out('% Incomplete command.', 'error')] };
+      if (negated) {
+        const newComms = state.snmp.communities.filter(c => c.name !== commName);
+        return { output: [], newState: { snmp: { ...state.snmp, communities: newComms }, unsavedChanges: true } };
+      }
+      const accessStr = (args[3] || 'ro').toLowerCase();
+      const access: 'ro' | 'rw' = accessStr === 'rw' ? 'rw' : 'ro';
+      const acl = args[4];
+      const newComm = acl ? { name: commName, access, acl } : { name: commName, access };
+      const newComms = [...state.snmp.communities.filter(c => c.name !== commName), newComm];
+      return { output: [], newState: { snmp: { ...state.snmp, communities: newComms }, unsavedChanges: true } };
+    }
+    if (sub === 'location') {
+      if (negated) return { output: [], newState: { snmp: { ...state.snmp, location: undefined }, unsavedChanges: true } };
+      const loc = args.slice(2).join(' ');
+      if (!loc) return { output: [out('% Incomplete command.', 'error')] };
+      return { output: [], newState: { snmp: { ...state.snmp, location: loc }, unsavedChanges: true } };
+    }
+    if (sub === 'contact') {
+      if (negated) return { output: [], newState: { snmp: { ...state.snmp, contact: undefined }, unsavedChanges: true } };
+      const contact = args.slice(2).join(' ');
+      if (!contact) return { output: [out('% Incomplete command.', 'error')] };
+      return { output: [], newState: { snmp: { ...state.snmp, contact }, unsavedChanges: true } };
+    }
+    if (sub === 'host') {
+      const ip = args[2];
+      if (!ip) return { output: [out('% Incomplete command.', 'error')] };
+      if (negated) {
+        const newHosts = state.snmp.trapHosts.filter(h => h.ip !== ip);
+        return { output: [], newState: { snmp: { ...state.snmp, trapHosts: newHosts }, unsavedChanges: true } };
+      }
+      // snmp-server host <ip> version 1|2c|3 <community>
+      const versionIdx = args.indexOf('version');
+      const ver = versionIdx >= 0 ? (args[versionIdx + 1] as '1' | '2c' | '3') : '2c';
+      const community = versionIdx >= 0 ? args[versionIdx + 2] : args[3];
+      if (!community) return { output: [out('% Incomplete command.', 'error')] };
+      const newHosts = [...state.snmp.trapHosts.filter(h => h.ip !== ip), { ip, community, version: ver }];
+      return { output: [], newState: { snmp: { ...state.snmp, trapHosts: newHosts }, unsavedChanges: true } };
+    }
+    if (sub === 'enable') {
+      const sub2 = (args[2] || '').toLowerCase();
+      if (sub2 === 'traps') {
+        return { output: [], newState: { snmp: { ...state.snmp, enabled: !negated }, unsavedChanges: true } };
+      }
+    }
+    return { output: [], newState: { unsavedChanges: true } };
   }
 
   void raw;
