@@ -1,26 +1,32 @@
 # Cisco IOS Switch Simulator
 
-**Browser-based Cisco IOS 15.7 CLI simulator — authentic output, zero hardware required.**
+**Browser-based Cisco IOS 15.2(7)E6 CLI simulator — authentic output, zero hardware required.**
 
-Simulates a Cisco Catalyst WS-C2960X-48TS-L with full CLI mode hierarchy, accurate command output, real-time interface stats, a live network topology diagram, and a phosphor-green CRT terminal aesthetic. Runs entirely in the browser; no backend, no network access.
+Simulates a Cisco Catalyst WS-C2960X-48TS-L (enterprise-LAN train) with full CLI mode hierarchy, accurate command output matching real 2960X hardware, real-time interface stats, a live network topology diagram, and a phosphor-green CRT terminal aesthetic. Runs entirely in the browser; no backend, no network access.
 
 ---
 
-## Screenshot
+## Features
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│  CISCO IOS SIMULATOR | WS-C2960X-48TS-L | IOS 15.7(3)M3        ● ON │
-├────────┬────────┬────────┬────────┬────────┬──────────────────────────┤
-│ CON 0  │ VTY 0  │ VTY 1  │ VTY 2  │ VTY 3  │              ⬡ TOPO      │
-├─────────────────────────────────────────────────────────────────────┤
-│ SW1#show ip interface brief                                         │
-│ Interface              IP-Address      OK? Method Status  Protocol  │
-│ FastEthernet0/1        unassigned      YES unset  up      up        │
-│ ...                                                                  │
-│ SW1#_                                                               │
-└─────────────────────────────────────────────────────────────────────┘
-```
+- **Cisco IOS 15.2(7)E6** — output matches real Catalyst 2960X hardware character-for-character (enterprise-LAN train, not the router M-train)
+- **All CLI modes** — User EXEC, Privileged EXEC, Global Config, Interface Config, VLAN Config, Line Config, Router Config (OSPF / EIGRP / BGP), MST Config
+- **IOS abbreviation engine** — `sh ip int bri`, `conf t`, `int fa0/1`, `no sh`, etc.
+- **`no` prefix support** — negates any supported command (`no shutdown`, `no ip address`, etc.)
+- **Tab completion** — context-aware across all modes and subcommands including `no <cmd>` TAB completion and interface names
+- **`?` help system** — inline help at any point in a command, including full sub-trees such as `show ip ?`, `show ip ospf ?`, `debug ip ?`
+- **Command history** — Up/Down arrow navigation; `show history`; Ctrl+R reverse-history search
+- **Pipe filters** — `| include`, `| exclude`, `| begin`, `| section` on any output
+- **Multi-session tabs** — Console (CON 0) plus up to 4 VTY sessions, each with independent state
+- **Topology diagram** — canvas-based live diagram of SW1, CDP neighbors, link states, animated traffic packets
+- **Animated boot sequence** — full Cisco ROM / POST boot with per-line timing and POWER LED
+- **Live status panel** — interface up/down grid, VLAN and MAC counts, CPU/memory bars, live uptime, SAVED/UNSAVED indicator
+- **Unsaved-changes tracking** — amber dot on session tab; `write memory` clears it
+- **CRT aesthetic** — phosphor-green text, scanlines, vignette, amber prompt in config modes
+- **F1 help overlay** — keyboard shortcut reference panel toggled from title bar or F1 key
+- **Simulated protocols** — OSPF, EIGRP, BGP, STP/RSTP/MST, HSRP, VRRP, LACP/PAgP, CDP, LLDP, VTP, SNMP, NTP, DHCP, NAT, AAA, 802.1X/MAB, IP SLA, QoS, SPAN, Multicast (PIM/IGMP), PoE
+- **Security features** — Port Security, DHCP Snooping, Dynamic ARP Inspection, IP Source Guard, ACLs, AAA/RADIUS/TACACS+, 802.1X/MAB, Err-disable/recovery
+- **Pre-populated device** — SW1 fully configured with 5 VLANs, 3 CDP neighbors, OSPF adjacency, DHCP pools, HSRP, static routes, local users
+- **Accurate 2960X output** — `show version`, routing table, VLAN table (including reserved VLANs 1002–1005), interface counters, and CDP neighbor detail all match real hardware format
 
 ---
 
@@ -29,10 +35,17 @@ Simulates a Cisco Catalyst WS-C2960X-48TS-L with full CLI mode hierarchy, accura
 **Docker (recommended):**
 
 ```bash
-docker compose up -d
+docker pull ghcr.io/atvriders/cisco-sim:latest
+docker run -p 8080:80 ghcr.io/atvriders/cisco-sim:latest
 ```
 
 Open **http://localhost:8080**. No configuration needed.
+
+Or with Docker Compose:
+
+```bash
+docker compose up -d
+```
 
 To update to the latest build:
 
@@ -49,28 +62,6 @@ npm run dev   # Vite dev server on :5173
 
 ---
 
-## Features
-
-- **Full Cisco IOS 15.7 CLI** — output matches real hardware character-for-character
-- **All CLI modes** — User EXEC, Privileged EXEC, Global Config, Interface Config, VLAN Config, Line Config, Router Config (OSPF / EIGRP / BGP)
-- **IOS abbreviation engine** — `sh ip int bri`, `conf t`, `int fa0/1`, `no sh`, etc.
-- **`no` prefix support** — negates any supported command (e.g. `no shutdown`, `no ip address`)
-- **Tab completion** — context-aware across all modes and subcommands including interface names
-- **`?` help system** — inline help at any point in a command
-- **Command history** — ArrowUp / ArrowDown navigation; `show history`
-- **Pipe filters** — `| include`, `| exclude`, `| begin`, `| section` on any output
-- **Multi-session tabs** — Console (CON 0) plus up to 4 VTY sessions, each with independent state
-- **Topology diagram** — canvas-based live diagram of SW1, CDP neighbors, link states, animated traffic packets
-- **Animated boot sequence** — full Cisco ROM / POST boot with per-line timing and POWER LED
-- **Live status panel** — interface up/down grid, VLAN and MAC counts, CPU/memory bars, live uptime, SAVED / UNSAVED indicator
-- **Unsaved-changes tracking** — amber dot on session tab; `write memory` clears it
-- **CRT aesthetic** — phosphor-green text, scanlines, vignette, amber prompt in config modes
-- **Simulated protocols** — OSPF, EIGRP, BGP, STP/RSTP/MST, HSRP, VRRP, LACP/PAgP, CDP, LLDP, VTP, SNMP, NTP, DHCP, NAT, AAA, 802.1X, IP SLA, QoS, SPAN, Multicast (PIM/IGMP)
-- **Security features** — Port Security, DHCP Snooping, Dynamic ARP Inspection, IP Source Guard, ACLs, AAA/RADIUS/TACACS+, 802.1X/MAB
-- **Pre-populated device** — SW1 fully configured with 5 VLANs, 3 CDP neighbors, OSPF adjacency, DHCP pools, HSRP, static routes, local users
-
----
-
 ## CLI Modes
 
 | Mode | Prompt | Enter | Exit |
@@ -84,8 +75,10 @@ npm run dev   # Vite dev server on :5173
 | Router OSPF | `SW1(config-router)#` | `router ospf <pid>` | `exit` → Global Config |
 | Router EIGRP | `SW1(config-router)#` | `router eigrp <asn>` | `exit` → Global Config |
 | Router BGP | `SW1(config-router)#` | `router bgp <asn>` | `exit` → Global Config |
+| MST Config | `SW1(config-mst)#` | `spanning-tree mst configuration` | `exit` → Global Config |
 
 `do <command>` works in any config mode to run exec-level commands without leaving config context.
+`Ctrl+Z` returns to privileged EXEC from any config mode (equivalent to `end`).
 
 ---
 
@@ -139,11 +132,11 @@ All show commands support IOS-style abbreviation (e.g. `sh ver`, `sh ip int bri`
 
 | Command | Description |
 |---------|-------------|
-| `show version` | IOS version, uptime, hardware info, serial numbers, flash |
+| `show version` | IOS 15.2(7)E6 version string, uptime, hardware, serial numbers, flash |
 | `show clock` | System clock |
 | `show processes cpu` | CPU utilization with per-process breakdown |
 | `show memory` | Processor and I/O memory usage |
-| `show flash` | Flash filesystem with IOS image filename |
+| `show flash` | Flash filesystem with IOS image `c2960x-universalk9-mz.152-7.E6.bin` |
 | `show environment` | Hardware fans, PSU, temperature sensors |
 | `show platform` | Platform hardware summary |
 | `show platform tcam` | TCAM utilization |
@@ -198,7 +191,7 @@ All show commands support IOS-style abbreviation (e.g. `sh ver`, `sh ip int bri`
 
 | Command | Description |
 |---------|-------------|
-| `show ip route` | IP routing table with codes legend |
+| `show ip route` | IP routing table with codes legend (real 2960X format) |
 | `show ip protocols` | Routing protocol summary (OSPF, EIGRP, BGP, RIP) |
 | `show arp` | ARP cache |
 | `show ip arp` | ARP cache (alias) |
@@ -238,7 +231,7 @@ All show commands support IOS-style abbreviation (e.g. `sh ver`, `sh ip int bri`
 |---------|-------------|
 | `show ip ospf` | OSPF process detail (router-id, areas, SPF counts) |
 | `show ip ospf neighbor` | OSPF adjacency table |
-| `show ip ospf database` | OSPF LSDB (alias for neighbor) |
+| `show ip ospf database` | OSPF LSDB |
 | `show ip ospf interface` | OSPF interface detail |
 | `show ip eigrp neighbors` | EIGRP neighbor table |
 | `show ip bgp` | BGP table |
@@ -262,16 +255,26 @@ All show commands support IOS-style abbreviation (e.g. `sh ver`, `sh ip int bri`
 | `show aaa servers` | RADIUS / TACACS+ server list |
 | `show errdisable recovery` | Err-disable auto-recovery timers |
 | `show errdisable detect` | Err-disable cause detection settings |
+| `show dot1x` | 802.1X global summary |
+| `show dot1x all` | 802.1X detail for all interfaces |
+| `show dot1x interface <id>` | Per-interface 802.1X status |
+| `show dot1x statistics interface <id>` | 802.1X counters per interface |
+| `show authentication sessions` | Active authentication sessions |
+| `show authentication sessions interface <id>` | Auth sessions for specific interface |
 | `show crypto key mypubkey rsa` | RSA public key data |
 | `show crypto pki certificates` | PKI certificate detail |
 
-**DHCP / NAT / HSRP:**
+**DHCP / HSRP / VRRP:**
 
 | Command | Description |
 |---------|-------------|
 | `show ip dhcp binding` | DHCP address bindings |
 | `show ip dhcp pool` | DHCP pool configuration |
 | `show ip dhcp conflict` | DHCP address conflicts |
+| `show standby` | HSRP group detail |
+| `show standby brief` | HSRP one-line summary table |
+| `show vrrp` | VRRP group detail |
+| `show vrrp brief` | VRRP one-line summary table |
 
 **QoS / Policies:**
 
@@ -333,6 +336,18 @@ All show commands support IOS-style abbreviation (e.g. `sh ver`, `sh ip int bri`
 | `show ip mroute` | Multicast routing table |
 | `show ip igmp groups` | IGMP group membership |
 | `show ip igmp interface` | IGMP per-interface detail |
+
+**PoE:**
+
+| Command | Description |
+|---------|-------------|
+| `show power inline` | PoE summary for all ports |
+| `show power inline interface <id>` | Per-interface PoE detail |
+
+**Cable / Diagnostics:**
+
+| Command | Description |
+|---------|-------------|
 | `show cable-diagnostics tdr` | TDR cable test results |
 
 **Pipe Filters** (append to any show command):
@@ -659,8 +674,8 @@ show interfaces | include <pattern>
 | **BGP** | AS number, networks, neighbor peering (Established state), `show ip bgp summary` |
 | **STP / RSTP** | Per-VLAN root bridge, port roles (root/designated/alternate), port states, priority, PortFast, BPDU Guard/Filter, Root Guard, Loop Guard, BackboneFast |
 | **MST** | Region name/revision, instance-to-VLAN mapping, per-instance bridge priority |
-| **HSRP** | Group number, virtual IP, priority, preemption, timers, authentication, Active/Standby state |
-| **VRRP** | Group configuration (acknowledged, state stored) |
+| **HSRP** | Group number, virtual IP, priority, preemption, timers, authentication, Active/Standby state; `show standby` / `show standby brief` |
+| **VRRP** | Group configuration, state; `show vrrp` / `show vrrp brief` |
 | **LACP / PAgP** | Port-channel creation, member tracking, protocol mode (active/passive/on/desirable/auto), `show etherchannel summary` |
 | **CDP** | Neighbor table (device ID, platform, IOS version, IP, native VLAN, duplex), per-interface enable/disable, global timer/holdtime |
 | **LLDP** | Neighbor table, per-interface transmit/receive control |
@@ -670,7 +685,7 @@ show interfaces | include <pattern>
 | **DHCP** | Pools (network, router, DNS, lease), excluded addresses, bindings, conflict detection |
 | **NAT** | Static mappings, dynamic pools, PAT/overload, inside/outside interface marking |
 | **AAA** | `aaa new-model`, authentication/authorization/accounting lists, RADIUS and TACACS+ server config |
-| **802.1X / MAB** | `dot1x system-auth-control`, per-interface port-control, MAB, authentication host-mode |
+| **802.1X / MAB** | `dot1x system-auth-control`, per-interface port-control, MAB, authentication sessions |
 | **IP SLA** | ICMP-echo probes, schedule (life/start-time/recurring), statistics and history |
 | **QoS** | MLS QoS trust (CoS/DSCP/IP precedence), class-maps, policy-maps with police/priority/bandwidth/set, service-policy application |
 | **SPAN** | Local SPAN sessions, source ports (rx/tx/both), source VLANs, destination port |
@@ -679,6 +694,7 @@ show interfaces | include <pattern>
 | **IP Source Guard** | Per-interface enable, binding table |
 | **Multicast** | PIM (sparse/dense), IGMP groups, multicast routing table (`show ip mroute`) |
 | **Port Security** | Max MACs, sticky learning, violation actions (protect/restrict/shutdown), err-disabled state |
+| **PoE** | Per-interface inline power mode (auto/never/static), `show power inline` |
 | **Storm Control** | Per-interface broadcast level threshold |
 | **Err-disable** | Recovery cause and interval configuration; `show errdisable recovery` / `show errdisable detect` |
 
@@ -688,14 +704,16 @@ show interfaces | include <pattern>
 
 | Key | Action |
 |-----|--------|
-| `Tab` | Context-aware command completion |
-| `?` | Show available commands or arguments at cursor position |
-| `ArrowUp` / `ArrowDown` | Navigate command history |
-| `Ctrl+R` | Reverse history search |
+| `Tab` | Context-aware command completion (works for `no <cmd>` too) |
+| `?` | Context-sensitive help at cursor — full sub-trees supported (e.g. `show ip ?`, `debug ip ospf ?`) |
+| `Up` / `Down` | Navigate command history |
+| `Ctrl+R` | Reverse-search through history |
 | `Ctrl+A` | Jump to beginning of line |
 | `Ctrl+E` | Jump to end of line |
 | `Ctrl+C` | Interrupt / return to exec prompt |
-| `F1` | Show help (same as `?`) |
+| `Ctrl+Z` | End — return to privileged EXEC from any config mode |
+| `F1` | Toggle keyboard shortcuts / CLI modes help overlay |
+| `!` | Comment line (ignored, as on real IOS) |
 
 ---
 
@@ -707,7 +725,9 @@ The simulator loads with a fully pre-configured switch. No setup required.
 |----------|-------|
 | Hostname | SW1 |
 | Model | Cisco Catalyst WS-C2960X-48TS-L |
-| IOS Version | 15.7(3)M3 |
+| IOS Version | 15.2(7)E6 (enterprise-LAN train) |
+| IOS Image | `c2960x-universalk9-mz.152-7.E6.bin` |
+| Boot Loader | C2960X-HBOOT-M Version 15.2(7r)E2 |
 | Serial Number | FOC2048Z0TN |
 | Enable Secret | `cisco123` |
 | Domain Name | `corp.local` |
@@ -744,6 +764,7 @@ The simulator loads with a fully pre-configured switch. No setup required.
 | 20 | VOICE | Fa0/9–16 |
 | 30 | MGMT | — |
 | 99 | NATIVE | Fa0/17–24 |
+| 1002–1005 | (reserved) | — |
 
 **Routing:**
 
@@ -765,20 +786,6 @@ The simulator loads with a fully pre-configured switch. No setup required.
 |----------|-----------|------|
 | admin | 15 | secret: `admin123` |
 | readonly | 1 | password: `view` |
-
----
-
-## UI Elements
-
-| Element | Description |
-|---------|-------------|
-| Title bar | `CISCO IOS SIMULATOR | WS-C2960X-48TS-L | IOS 15.7(3)M3` |
-| Session tabs | CON 0 + VTY 0–3; amber dot when unsaved changes are present |
-| TOPO button | Toggle canvas-based network topology diagram |
-| Terminal | Phosphor-green CRT text; prompt shifts amber in any config sub-mode |
-| Status panel | Interface up/down grid, VLAN and MAC counts, CPU/memory bars, live uptime, SAVED/UNSAVED indicator |
-| Boot screen | ROM/POST animation with POWER LED; fades to terminal on complete |
-| Scroll button | Floating button appears when scrolled up; jumps to latest output |
 
 ---
 
@@ -821,7 +828,7 @@ npm run preview   # Preview production build locally
 TypeScript check:
 
 ```bash
-/home/kasm-user/.local/node/bin/node ./node_modules/.bin/tsc --noEmit
+npx tsc --noEmit
 ```
 
 Docker build:
