@@ -120,6 +120,23 @@ function maskToCidr(mask: string): number {
   }, 0);
 }
 
+function vlansToString(vlans: number[]): string {
+  if (vlans.length === 0) return '';
+  const sorted = [...vlans].sort((a, b) => a - b);
+  const ranges: string[] = [];
+  let start = sorted[0];
+  let prev = sorted[0];
+  for (let i = 1; i < sorted.length; i++) {
+    if (sorted[i] === prev + 1) { prev = sorted[i]; }
+    else {
+      ranges.push(start === prev ? String(start) : `${start}-${prev}`);
+      start = sorted[i]; prev = sorted[i];
+    }
+  }
+  ranges.push(start === prev ? String(start) : `${start}-${prev}`);
+  return ranges.join(',');
+}
+
 function showRunningConfig(state: DeviceState): string[] {
   const ls: string[] = [];
   ls.push('Building configuration...');
@@ -1907,22 +1924,6 @@ function showIpOspfDetail(state: DeviceState): string[] {
 }
 
 
-function vlansToString(vlans: number[]): string {
-  if (vlans.length === 0) return '';
-  const sorted = [...vlans].sort((a, b) => a - b);
-  const ranges: string[] = [];
-  let start = sorted[0];
-  let prev = sorted[0];
-  for (let i = 1; i < sorted.length; i++) {
-    if (sorted[i] === prev + 1) { prev = sorted[i]; }
-    else {
-      ranges.push(start === prev ? String(start) : `${start}-${prev}`);
-      start = sorted[i]; prev = sorted[i];
-    }
-  }
-  ranges.push(start === prev ? String(start) : `${start}-${prev}`);
-  return ranges.join(',');
-}
 
 function showIpDhcpSnooping(state: DeviceState): string[] {
   const s = state.dhcpSnooping;
@@ -2297,6 +2298,252 @@ function showTechSupport(state: DeviceState): string[] {
   return ls;
 }
 
+
+function showAaa(state: DeviceState, servers: boolean): string[] {
+  if (!state.aaa.newModel) {
+    return ['AAA: new-model not enabled'];
+  }
+  if (servers) {
+    const ls: string[] = [];
+    ls.push('RADIUS: id 1, priority 1, host 0.0.0.0, auth-port 1645, acct-port 1646');
+    ls.push('     State: current UP, duration 5s, previous duration 0s');
+    ls.push('     Dead: total time 0s, count 0');
+    ls.push('     Quarantined: No');
+    ls.push('     Authen: request 0, timeouts 0, failover 0, retransmission 0');
+    ls.push('             Response: accept 0, reject 0, challenge 0');
+    ls.push('             Response: unexpected 0, server error 0, incorrect 0, time 0ms');
+    ls.push('             Transaction: success 0, failure 0');
+    ls.push('     Author: request 0, timeouts 0, failover 0, retransmission 0');
+    ls.push('             Response: accept 0, reject 0, challenge 0');
+    ls.push('             Response: unexpected 0, server error 0, incorrect 0, time 0ms');
+    ls.push('             Transaction: success 0, failure 0');
+    ls.push('     Account: request 0, timeouts 0, failover 0, retransmission 0');
+    ls.push('             Response: start 0, interim 0, stop 0');
+    ls.push('             Response: unexpected 0, server error 0, incorrect 0, time 0ms');
+    ls.push('             Transaction: success 0, failure 0');
+    ls.push('     Elapsed time since counters last cleared: 2m');
+    return ls;
+  }
+  const ls: string[] = [];
+  ls.push('AAA: enabled');
+  ls.push('');
+  ls.push('Authentication lists:');
+  for (const l of state.aaa.authenticationLists) {
+    ls.push(`  ${l.name}: ${l.methods.join(', ')}`);
+  }
+  ls.push('');
+  ls.push('Authorization lists:');
+  for (const l of state.aaa.authorizationLists) {
+    ls.push(`  ${l.type} ${l.name}: ${l.methods.join(', ')}`);
+  }
+  ls.push('');
+  ls.push('Accounting lists:');
+  for (const l of state.aaa.accountingLists) {
+    ls.push(`  ${l.type} ${l.name}: ${l.methods.join(', ')}`);
+  }
+  return ls;
+}
+
+function showIpSlaStatistics(state: DeviceState, id?: number): string[] {
+  const ls: string[] = [];
+  ls.push('IPSLAs Latest Operation Statistics');
+  ls.push('');
+  const entries = id !== undefined ? state.ipSla.filter(e => e.id === id) : state.ipSla;
+  for (const entry of entries) {
+    const lastHistory = entry.history[entry.history.length - 1];
+    const rtt = lastHistory ? lastHistory.roundTripTime : 0;
+    const lastTs = lastHistory ? lastHistory.timestamp : 'N/A';
+    const successes = entry.history.filter(h => h.success).length;
+    const failures = entry.history.filter(h => !h.success).length;
+    const sched = state.ipSlaSchedules.find(s => s.id === entry.id);
+    const lifeStr = sched ? (sched.life === 'forever' ? 'Forever' : `${sched.life} seconds`) : 'Forever';
+    ls.push(`IPSLA operation id: ${entry.id}`);
+    ls.push(`        Latest RTT: ${rtt} milliseconds`);
+    ls.push(`Latest operation start time: ${lastTs} Fri Mar 20 2026`);
+    ls.push(`Latest operation return code: ${lastHistory && lastHistory.success ? 'OK' : 'Timeout'}`);
+    ls.push(`Number of successes: ${successes}`);
+    ls.push(`Number of failures: ${failures}`);
+    ls.push(`Operation time to live: ${lifeStr}`);
+    ls.push('');
+  }
+  return ls;
+}
+
+function showIpSlaSummary(state: DeviceState): string[] {
+  const ls: string[] = [];
+  ls.push('IPSLAs Latest Operation Summary');
+  ls.push('Codes: * active,  ^ inactive,  ~ pending');
+  ls.push('');
+  ls.push('ID           Type        Destination       Stats       Return      Last');
+  ls.push('                                           (ms)        Code        Run');
+  ls.push('-----------------------------------------------------------------------');
+  for (const entry of state.ipSla) {
+    const lastHistory = entry.history[entry.history.length - 1];
+    const rtt = lastHistory ? lastHistory.roundTripTime : 0;
+    const code = lastHistory && lastHistory.success ? 'OK' : 'Timeout';
+    const active = state.ipSlaSchedules.some(s => s.id === entry.id) ? '*' : '^';
+    ls.push(`${active}${String(entry.id).padEnd(12)} ${entry.type.padEnd(12)}${entry.target.padEnd(18)}RTT=${rtt.toString().padEnd(8)}${code.padEnd(12)}15 seconds ago`);
+  }
+  return ls;
+}
+
+function showIpSlaConfiguration(state: DeviceState, id?: number): string[] {
+  const ls: string[] = [];
+  ls.push('IP SLAs Infrastructure Engine-II');
+  const entries = id !== undefined ? state.ipSla.filter(e => e.id === id) : state.ipSla;
+  for (const entry of entries) {
+    const sched = state.ipSlaSchedules.find(s => s.id === entry.id);
+    ls.push(`Entry number: ${entry.id}`);
+    ls.push(`Owner: `);
+    ls.push(`Tag: ${entry.tag || ''}`);
+    ls.push(`Type of operation to perform: ${entry.type}`);
+    ls.push(`Target address/Source interface: ${entry.target}/${entry.sourceInterface || ''}`);
+    ls.push(`Type Of Service parameter: 0x0`);
+    ls.push(`Request size (ARR data portion): 28`);
+    ls.push(`Operation timeout (milliseconds): ${entry.timeout}`);
+    ls.push(`Verify data: No`);
+    ls.push(`Vrf Name: `);
+    ls.push(`Schedule:`);
+    ls.push(`   Operation frequency (seconds): ${entry.frequency}  (not considered if randomly scheduled)`);
+    ls.push(`   Next Scheduled Start Time: Start Time already passed`);
+    ls.push(`   Group Scheduled : FALSE`);
+    ls.push(`   Randomly Scheduled : FALSE`);
+    ls.push(`   Life (seconds): ${sched ? (sched.life === 'forever' ? 'Forever' : sched.life) : 'Forever'}`);
+    ls.push(`   Entry Ageout (seconds): never`);
+    ls.push(`   Recurring (Starting Everyday): ${sched && sched.recurring ? 'TRUE' : 'FALSE'}`);
+    ls.push(`   Status of entry (SNMP RowStatus): Active`);
+    ls.push(`Threshold (milliseconds): ${entry.threshold}`);
+    ls.push(`Distribution Statistics:`);
+    ls.push(`   Number of statistic hours kept: 2`);
+    ls.push(`   Number of statistic distribution buckets kept: 1`);
+    ls.push(`   Statistic distribution interval (milliseconds): 20`);
+    ls.push(`Enhanced History:`);
+    ls.push(`History Statistics:`);
+    ls.push(`   Number of history Lives kept: 0`);
+    ls.push(`   Number of history Buckets kept: 15`);
+    ls.push(`   History Filter Type: None`);
+    ls.push('');
+  }
+  return ls;
+}
+
+function showStormControl(state: DeviceState, ifArg?: string): string[] {
+  const ls: string[] = [];
+  ls.push('Interface  Filter State   Upper         Lower        Current');
+  ls.push('---------  ------------- -----------   -----------  ----------');
+  const physIfaces = Object.values(state.interfaces)
+    .filter(i => (i.id.startsWith('Fa') || i.id.startsWith('Gi')) && i.lineState === 'up')
+    .filter(i => !ifArg || i.id.toLowerCase() === ifArg.toLowerCase() || shortIfName(i.id).toLowerCase() === ifArg.toLowerCase())
+    .sort((a, b) => {
+      const aGi = a.id.startsWith('Gi') ? 1 : 0;
+      const bGi = b.id.startsWith('Gi') ? 1 : 0;
+      if (aGi !== bGi) return aGi - bGi;
+      return a.port - b.port;
+    });
+  for (const iface of physIfaces) {
+    const short = shortIfName(iface.id);
+    ls.push(`${padRight(short, 11)}${padRight('Forwarding', 15)}${padRight('100.00%', 14)}${padRight('100.00%', 13)}0.00%`);
+  }
+  return ls;
+}
+
+function showCryptoKeyMypubkeyRsa(state: DeviceState): string[] {
+  if (!state.cryptoKeyRsa) {
+    return ['% Key pair was not generated.'];
+  }
+  const generated = new Date(state.cryptoKeyRsa.generated);
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const hh = String(generated.getUTCHours()).padStart(2,'0');
+  const mm = String(generated.getUTCMinutes()).padStart(2,'0');
+  const ss = String(generated.getUTCSeconds()).padStart(2,'0');
+  const genStr = `${hh}:${mm}:${ss} UTC ${months[generated.getUTCMonth()]} ${generated.getUTCDate()} ${generated.getUTCFullYear()}`;
+  const hostname = state.hostname;
+  const domain = state.domainName;
+  const keyName = domain ? `${hostname}.${domain}` : hostname;
+  return [
+    `% Key pair was generated at: ${genStr}`,
+    `Key name: ${keyName}`,
+    `Key type: RSA KEYS`,
+    ` Storage Device: not specified`,
+    ` Usage: General Purpose Key`,
+    ` Key is not exportable. Key version is 1.`,
+    ` Key Data:`,
+    `  30820122 300D0609 2A864886 F70D0101 01050003 82010F00 3082010A 02820101`,
+    `  00C5B5D7 ...`,
+    `% Key pair was generated at: ${genStr}`,
+    `Key name: ${keyName}.server`,
+    `Key type: RSA KEYS`,
+    ` Storage Device: not specified`,
+    ` Usage: SSL Server`,
+    ` Key Data:`,
+    `  30820122 ...`,
+  ];
+}
+
+function showCryptoPkiCertificates(state: DeviceState): string[] {
+  if (!state.cryptoKeyRsa) {
+    return ['% No certificates found.'];
+  }
+  const hostname = state.hostname;
+  const domain = state.domainName;
+  const keyName = domain ? `${hostname}.${domain}` : hostname;
+  const mgmtIp = Object.values(state.interfaces)
+    .find(i => i.id === 'Vlan1' && i.ipAddresses.length > 0)
+    ?.ipAddresses[0]?.address || '0.0.0.0';
+  return [
+    'Certificate',
+    '  Status: Available',
+    '  Certificate Serial Number (hex): 01',
+    '  Certificate Usage: General Purpose',
+    '  Issuer:',
+    `    cn=${keyName}`,
+    '  Subject:',
+    `    Name: ${keyName}`,
+    `    IP Address: ${mgmtIp}`,
+    `    cn=${keyName}`,
+    '  Validity Date:',
+    '    start date: 15:30:01 UTC Mar 20 2026',
+    '    end   date: 15:30:01 UTC Mar 20 2028',
+    '  Associated Trustpoints: TP-self-signed',
+    `  Storage: nvram:${keyName}#1.cer`,
+    '',
+    'CA Certificate',
+    '  Status: Available',
+    '  Certificate Serial Number (hex): 01',
+    '  Certificate Usage: Signature',
+    '  Issuer:',
+    `    cn=${keyName}`,
+    '  Subject:',
+    `    cn=${keyName}`,
+    '  Validity Date:',
+    '    start date: 15:30:01 UTC Mar 20 2026',
+    '    end   date: 15:30:01 UTC Mar 20 2028',
+    '  Associated Trustpoints: TP-self-signed',
+    `  Storage: nvram:${keyName}#1CA.cer`,
+  ];
+}
+
+function showIpArpInspection(state: DeviceState): string[] {
+  const ls: string[] = [];
+  ls.push(' Source Mac Validation      : Disabled');
+  ls.push(' Destination Mac Validation : Disabled');
+  ls.push(' IP-MAC Validation          : Disabled');
+  ls.push('');
+  ls.push(' Vlan     Configuration    Operation   ACL Match          Static ACL');
+  ls.push(' ----     -------------    ---------   ---------          ----------');
+  const vlanIds = Object.keys(state.vlans).map(Number).filter(v => v !== 1).sort((a,b)=>a-b).slice(0,2);
+  for (const vid of vlanIds) {
+    ls.push(`   ${String(vid).padEnd(6)}   Disabled         Inactive`);
+  }
+  ls.push('');
+  ls.push(' Vlan     Forwarded        Dropped      DHCP Drops      ACL Drops');
+  ls.push(' ----     ---------        -------      ----------      ---------');
+  for (const vid of vlanIds) {
+    ls.push(`   ${String(vid).padEnd(6)}           0              0               0              0`);
+  }
+  return ls;
+}
+
 export const showHandler: CommandHandler = (args, state, _raw, _negated) => {
   // Parse pipe operator: args may contain '|' as a token
   let mainArgs = args;
@@ -2618,6 +2865,65 @@ export const showHandler: CommandHandler = (args, state, _raw, _negated) => {
       '                            network     rw  ftp:',
       '                            network     rw  rcp:',
     ]);
+  }
+
+
+  // show aaa
+  if (sub === 'aaa') {
+    const sub3 = (mainArgs[2] || '').toLowerCase();
+    if (sub2 === 'local' && sub3.startsWith('user')) {
+      return makeResult(['There are no locked users']);
+    }
+    const servers = sub2 === 'servers';
+    return makeResult(showAaa(state, servers));
+  }
+
+  // show ip sla / show ip arp inspection / show ip dhcp snooping
+  // These are handled inside the 'ip' block — we extend it here as alternatives
+  if (sub === 'ip') {
+    if (sub2 === 'sla') {
+      const sub3 = (mainArgs[2] || '').toLowerCase();
+      const sub4 = (mainArgs[3] || '').toLowerCase();
+      if (sub3.startsWith('stat') || sub3 === 'statistics') {
+        const idArg = parseInt(sub4 || '');
+        return makeResult(showIpSlaStatistics(state, isNaN(idArg) ? undefined : idArg));
+      }
+      if (sub3.startsWith('sum') || sub3 === 'summary') {
+        return makeResult(showIpSlaSummary(state));
+      }
+      if (sub3.startsWith('conf') || sub3 === 'configuration') {
+        const idArg = parseInt(sub4 || '');
+        return makeResult(showIpSlaConfiguration(state, isNaN(idArg) ? undefined : idArg));
+      }
+      // default: statistics
+      const idArg2 = parseInt(sub3 || '');
+      if (!isNaN(idArg2)) return makeResult(showIpSlaStatistics(state, idArg2));
+      return makeResult(showIpSlaStatistics(state));
+    }
+    if (sub2 === 'arp' && (mainArgs[2] || '').toLowerCase() === 'inspection') {
+      return makeResult(showIpArpInspection(state));
+    }
+    if (sub2 === 'dhcp' && (mainArgs[2] || '').toLowerCase() === 'snooping' && (mainArgs[3] || '').toLowerCase() === 'binding') {
+      return makeResult(showIpDhcpBinding(state));
+    }
+  }
+
+  // show storm-control
+  if (sub === 'storm-control') {
+    const ifArg = mainArgs[1] || '';
+    return makeResult(showStormControl(state, ifArg || undefined));
+  }
+
+  // show crypto
+  if (sub === 'crypto') {
+    const sub3 = (mainArgs[2] || '').toLowerCase();
+    if (sub2 === 'key' && sub3 === 'mypubkey') {
+      return makeResult(showCryptoKeyMypubkeyRsa(state));
+    }
+    if (sub2 === 'pki' && sub3 === 'certificates') {
+      return makeResult(showCryptoPkiCertificates(state));
+    }
+    return makeResult(showCryptoKeyMypubkeyRsa(state));
   }
 
   return {

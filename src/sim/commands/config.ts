@@ -62,6 +62,30 @@ export const configHandler: CommandHandler = (args, state, raw, negated) => {
     return showHandler(subArgs, state, subArgs.join(' '), false);
   }
 
+  // dot1x global commands
+  if (cmd === 'dot1x') {
+    const sub = (args[1] || '').toLowerCase();
+    if (sub === 'system-auth-control') {
+      return { output: [out(negated ? 'dot1x system-auth-control disabled' : 'dot1x system-auth-control enabled')], newState: { unsavedChanges: true } };
+    }
+    if (sub === 'guest-vlan') {
+      return { output: [out('dot1x guest-vlan supplicant configured')], newState: { unsavedChanges: true } };
+    }
+    return { output: [], newState: { unsavedChanges: true } };
+  }
+
+  // authentication global commands
+  if (cmd === 'authentication') {
+    const sub = (args[1] || '').toLowerCase();
+    if (sub === 'mac-move') {
+      return { output: [out('authentication mac-move permit configured')], newState: { unsavedChanges: true } };
+    }
+    if (sub === 'logging') {
+      return { output: [out('authentication logging verbose configured')], newState: { unsavedChanges: true } };
+    }
+    return { output: [], newState: { unsavedChanges: true } };
+  }
+
   if (cmd === 'hostname') {
     if (negated) {
       return { output: [], newState: { hostname: 'Router', unsavedChanges: true } };
