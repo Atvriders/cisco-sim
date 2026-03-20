@@ -33,6 +33,19 @@ function resolveIfFull(raw: string): string {
   return normalizeIfId(raw);
 }
 
+function parseVlanRange(rangeStr: string): number[] {
+  const result: number[] = [];
+  for (const part of rangeStr.split(',')) {
+    const dash = part.trim().split('-');
+    const start = parseInt(dash[0]);
+    const end = parseInt(dash[1] || dash[0]);
+    if (!isNaN(start) && !isNaN(end)) {
+      for (let v = start; v <= end; v++) result.push(v);
+    }
+  }
+  return result;
+}
+
 export const configHandler: CommandHandler = (args, state, raw, negated) => {
   const cmd = (args[0] || '').toLowerCase();
 
@@ -161,6 +174,62 @@ export const configHandler: CommandHandler = (args, state, raw, negated) => {
         output: [out(`ip access-list ${type} ${name}`)],
         newState: { acls: { ...state.acls, [name]: { ...newAcl, type } }, unsavedChanges: true },
       };
+    }
+
+    if (sub === 'dhcp') {
+      const sub2 = (args[2] || '').toLowerCase();
+      if (sub2 === 'snooping') {
+        const sub3 = (args[3] || '').toLowerCase();
+        if (!sub3) {
+          // ip dhcp snooping  /  no ip dhcp snooping
+          return { output: [], newState: { dhcpSnooping: { ...state.dhcpSnooping, enabled: !negated }, unsavedChanges: true } };
+        }
+        if (sub3 === 'vlan') {
+          const rangeStr = args[4] || '';
+          const vlans = parseVlanRange(rangeStr);
+          if (negated) {
+            const newVlans = state.dhcpSnooping.vlans.filter(v => !vlans.includes(v));
+            return { output: [], newState: { dhcpSnooping: { ...state.dhcpSnooping, vlans: newVlans }, unsavedChanges: true } };
+          }
+          const newVlans = Array.from(new Set([...state.dhcpSnooping.vlans, ...vlans])).sort((a,b)=>a-b);
+          return { output: [], newState: { dhcpSnooping: { ...state.dhcpSnooping, vlans: newVlans }, unsavedChanges: true } };
+        }
+        if (sub3 === 'information') {
+          const sub4 = (args[4] || '').toLowerCase();
+          if (sub4 === 'option') {
+            // ip dhcp snooping information option  /  no ip dhcp snooping information option
+            return { output: [], newState: { dhcpSnooping: { ...state.dhcpSnooping, option82: !negated }, unsavedChanges: true } };
+          }
+        }
+        return { output: [], newState: { unsavedChanges: true } };
+      }
+      return { output: [out(`% Unknown ip dhcp subcommand: ${sub2}`, 'error')] };
+    }
+
+    if (sub === 'arp') {
+      const sub2 = (args[2] || '').toLowerCase();
+      if (sub2 === 'inspection') {
+        const sub3 = (args[3] || '').toLowerCase();
+        if (sub3 === 'vlan') {
+          const rangeStr = args[4] || '';
+          const vlans = parseVlanRange(rangeStr);
+          if (negated) {
+            const newVlans = state.dai.vlans.filter(v => !vlans.includes(v));
+            return { output: [], newState: { dai: { ...state.dai, vlans: newVlans, enabled: newVlans.length > 0 }, unsavedChanges: true } };
+          }
+          const newVlans = Array.from(new Set([...state.dai.vlans, ...vlans])).sort((a,b)=>a-b);
+          return { output: [], newState: { dai: { ...state.dai, vlans: newVlans, enabled: newVlans.length > 0 }, unsavedChanges: true } };
+        }
+        if (sub3 === 'validate') {
+          // ip arp inspection validate src-mac dst-mac ip  -- just accept
+          return { output: [], newState: { unsavedChanges: true } };
+        }
+        if (sub3 === 'log-buffer') {
+          return { output: [], newState: { unsavedChanges: true } };
+        }
+        return { output: [], newState: { unsavedChanges: true } };
+      }
+      return { output: [out(`% Unknown ip arp subcommand: ${sub2}`, 'error')] };
     }
 
     return { output: [out(`% Unknown ip subcommand: ${sub}`, 'error')] };
@@ -551,6 +620,18 @@ export const configHandler: CommandHandler = (args, state, raw, negated) => {
     const sub = (args[1] || '').toLowerCase();
     if (sub === 'run' || sub === '') {
       return { output: [], newState: { cdpEnabled: !negated, unsavedChanges: true } };
+    }
+    if (sub === 'timer') {
+      if (negated) return { output: [], newState: { cdpTimer: 60, unsavedChanges: true } };
+      const secs = parseInt(args[2] || '60');
+      if (isNaN(secs) || secs < 5 || secs > 254) return { output: [out('% CDP timer must be between 5 and 254 seconds', 'error')] };
+      return { output: [], newState: { cdpTimer: secs, unsavedChanges: true } };
+    }
+    if (sub === 'holdtime') {
+      if (negated) return { output: [], newState: { cdpHoldtime: 180, unsavedChanges: true } };
+      const secs = parseInt(args[2] || '180');
+      if (isNaN(secs) || secs < 10 || secs > 255) return { output: [out('% CDP holdtime must be between 10 and 255 seconds', 'error')] };
+      return { output: [], newState: { cdpHoldtime: secs, unsavedChanges: true } };
     }
     return { output: [out('% Unknown cdp command', 'error')] };
   }
