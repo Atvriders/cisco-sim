@@ -7,6 +7,7 @@ interface Props {
   onChange: (v: string) => void;
   onSubmit: (v: string) => void;
   onTab: (v: string) => string;
+  onHelp: (v: string) => void;
   onUp: (v: string) => string;
   onDown: () => string;
   disabled?: boolean;
@@ -21,7 +22,7 @@ interface ReverseSearch {
   matchIndex: number;
 }
 
-export default function TerminalInput({ prompt, value, onChange, onSubmit, onTab, onUp, onDown, disabled, onFocusRef, mode, commandHistory = [] }: Props) {
+export default function TerminalInput({ prompt, value, onChange, onSubmit, onTab, onHelp, onUp, onDown, disabled, onFocusRef, mode, commandHistory = [] }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [isFocused, setIsFocused] = useState(false);
   const [reverseSearch, setReverseSearch] = useState<ReverseSearch>({ active: false, query: '', matchIndex: 0 });
@@ -131,8 +132,8 @@ export default function TerminalInput({ prompt, value, onChange, onSubmit, onTab
       onChange(newVal);
     } else if (e.key === '?') {
       e.preventDefault();
-      // Show the ? appended then submit immediately - real Cisco behavior
-      onSubmit(value + '?');
+      // Show help without submitting — input stays intact
+      onHelp(value);
     } else if (e.key === 'c' && e.ctrlKey) {
       e.preventDefault();
       onChange('');

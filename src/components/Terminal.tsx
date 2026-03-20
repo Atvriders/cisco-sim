@@ -62,6 +62,11 @@ export default function Terminal({ sessionState, onDispatch, currentInput }: Pro
     return v;
   };
 
+  const handleHelp = (v: string) => {
+    onDispatch({ type: 'HELP_QUERY', input: v });
+    setTimeout(() => scrollToBottom(), 50);
+  };
+
   const handleUp = (v: string): string => {
     const hist = sessionState.commandHistory;
     if (hist.length === 0) return v;
@@ -114,6 +119,7 @@ export default function Terminal({ sessionState, onDispatch, currentInput }: Pro
         onChange={v => onDispatch({ type: 'SET_INPUT', input: v })}
         onSubmit={handleSubmit}
         onTab={handleTab}
+        onHelp={handleHelp}
         onUp={handleUp}
         onDown={handleDown}
         onFocusRef={inputFocusTriggerRef}

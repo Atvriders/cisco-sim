@@ -7,6 +7,7 @@ import { tabComplete } from './completion';
 
 export type SimAction =
   | { type: 'EXECUTE'; input: string }
+  | { type: 'HELP_QUERY'; input: string }
   | { type: 'HISTORY_UP' }
   | { type: 'HISTORY_DOWN' }
   | { type: 'SET_INPUT'; input: string }
@@ -295,9 +296,7 @@ export function reducer(state: SimState, action: SimAction): SimState {
       }
 
       const newSessions = state.sessions.map(s => s.id === state.activeSessionId ? updatedSession : s);
-      // For ? help queries, restore the input (minus the ?) so the user can continue typing
-      const nextInput = input.endsWith('?') ? input.slice(0, -1) : '';
-      return { ...state, sessions: newSessions, currentInput: nextInput };
+      return { ...state, sessions: newSessions, currentInput: '' };
     }
 
     case 'HISTORY_UP': {
@@ -408,6 +407,22 @@ export function reducer(state: SimState, action: SimAction): SimState {
         return { ...s, deviceState: { ...ds, currentTime: action.now, interfaces: updatedIfaces } };
       });
       return { ...state, sessions: newSessions };
+    }
+
+    case 'HELP_QUERY': {
+      // Show help without submitting — like Tab but for ?
+      // Echo the prompt+input+? line, then show help, but leave currentInput unchanged
+      const helpSession = activeSession;
+      const helpPrompt = buildPrompt(helpSession.deviceState);
+      const helpResult = dispatch(action.input + '?', helpSession.deviceState);
+      const echoHelpLine: TerminalLine = out(`${helpPrompt}${action.input}?`, 'input');
+      const newSessionsHelp = state.sessions.map(s =>
+        s.id === state.activeSessionId
+          ? { ...s, lines: [...s.lines, echoHelpLine, ...helpResult.output] }
+          : s
+      );
+      // currentInput stays unchanged — user continues typing from where they were
+      return { ...state, sessions: newSessionsHelp };
     }
 
     case 'PENDING_CONFIRM': {
