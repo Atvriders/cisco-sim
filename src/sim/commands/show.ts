@@ -532,19 +532,23 @@ function showIpInterface(state: DeviceState, ifId: string): string[] {
   const ls: string[] = [];
   const adminStr = iface.adminState === 'down' ? 'administratively down' : iface.lineState === 'up' ? 'up' : iface.lineState;
   const proto = iface.lineState === 'up' ? 'up' : 'down';
-  ls.push(`${iface.id} is ${adminStr}, line protocol is ${proto}`);
+  const displayId = expandIfNameFull(iface.id);
+  ls.push(`${displayId} is ${adminStr}, line protocol is ${proto}`);
   if (iface.ipAddresses.length > 0) {
     const ip = iface.ipAddresses[0];
     ls.push(`  Internet address is ${ip.address}/${maskToCidr(ip.mask)}`);
   } else {
-    ls.push('  Internet protocol processing disabled');
+    ls.push(`  Internet address is unassigned`);
   }
   ls.push(`  Broadcast address is 255.255.255.255`);
+  ls.push(`  Address determined by non-volatile memory`);
   ls.push(`  MTU is ${iface.mtu} bytes`);
   ls.push(`  Helper address is ${iface.ipHelperAddresses.length > 0 ? iface.ipHelperAddresses.join(', ') : 'not set'}`);
   ls.push(`  Directed broadcast forwarding is disabled`);
   ls.push(`  Outgoing Common access list is not set`);
-  ls.push(`  Inbound  Common access list is not set`);
+  ls.push(`  Outgoing access list is not set`);
+  ls.push(`  Inbound Common access list is not set`);
+  ls.push(`  Inbound  access list is not set`);
   for (const ag of iface.ipAccessGroups) {
     ls.push(`  ${ag.direction === 'in' ? 'Inbound' : 'Outgoing'} access list is ${ag.acl}`);
   }
@@ -555,8 +559,28 @@ function showIpInterface(state: DeviceState, ifId: string): string[] {
   ls.push(`  ICMP redirects are always sent`);
   ls.push(`  ICMP unreachables are always sent`);
   ls.push(`  ICMP mask replies are never sent`);
-  ls.push(`  IP fast switching is enabled`);
+  ls.push(`  IP fast switching is disabled`);
+  ls.push(`  IP Flow switching is disabled`);
   ls.push(`  IP CEF switching is enabled`);
+  ls.push(`  IP CEF switching turbo vector`);
+  ls.push(`  IP Null turbo vector`);
+  ls.push(`  VPN Routing/Forwarding "default"`);
+  ls.push(`  IP multicast fast switching is disabled`);
+  ls.push(`  IP multicast distributed fast switching is disabled`);
+  ls.push(`  IP route-cache flags are Fast, CEF`);
+  ls.push(`  Router Discovery is disabled`);
+  ls.push(`  IP output packet accounting is disabled`);
+  ls.push(`  IP access violation accounting is disabled`);
+  ls.push(`  TCP/IP header compression is disabled`);
+  ls.push(`  RTP/IP header compression is disabled`);
+  ls.push(`  Probe proxy name replies are disabled`);
+  ls.push(`  Policy routing is disabled`);
+  ls.push(`  Network address translation is disabled`);
+  ls.push(`  BGP Policy Mapping is disabled`);
+  ls.push(`  Input features: MCI Check`);
+  ls.push(`  IPv4 WCCP Redirect outbound is disabled`);
+  ls.push(`  IPv4 WCCP Redirect inbound is disabled`);
+  ls.push(`  IPv4 WCCP Redirect exclude is disabled`);
   return ls;
 }
 
@@ -1731,6 +1755,157 @@ function resolveInterface(partial: string, state: DeviceState): string | null {
   return null;
 }
 
+
+function showPlatform(_state: DeviceState): string[] {
+  return [
+    'Chassis type: WS-C2960X-48TS-L',
+    '',
+    'Slot      Type                State                 Insert time (ago)',
+    '--------- ------------------- --------------------- -----------------',
+    ' WS-C2960X-48TS-L             ok                    2 days, 3 hours',
+    ' Power supply 1               ok                    2 days, 3 hours',
+    '',
+    'Slot      CPLD Version        Firmware Version',
+    '--------- ------------------- ---------------------------------',
+    ' WS-C2960X-48TS-L             15.7(3r)M3',
+  ];
+}
+
+function showPlatformTcam(_state: DeviceState): string[] {
+  return [
+    'CAM Utilization for ASIC# 0      Max            Used',
+    '  Unicast mac addresses:         32768          42',
+    '  IPv4 IGMP groups + multicast routes:',
+    '                                 1024           0',
+    '  IPv4 unicast routes:           8192           12',
+    '  IPv6 unicast routes:           2048           2',
+    '  QoS access control entries:   512            0',
+    '  Security access control entries:',
+    '                                 4096           4',
+    '  Layer 2 VLANs:                 1023           8',
+    '  Total Netflow TCAM entries:    0              0',
+  ];
+}
+
+function showControllers(_state: DeviceState): string[] {
+  return [
+    'Interface FastEthernet0/1',
+    '  Hardware is Fast Ethernet',
+    '  ARP type: ARPA, ARP Timeout 04:00:00',
+    '  Last input 00:00:02, output 00:00:00',
+    '  Input queue: 0/75/0 (size/max/drops); Total output drops: 0',
+    '  5 minute input rate 1000 bits/sec, 1 packets/sec',
+    '  5 minute output rate 2000 bits/sec, 2 packets/sec',
+    '  Received 142983 broadcasts, 0 runts, 0 giants, 0 throttles',
+    '  0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored',
+    '  Output queue: 0/40 (size/max)',
+    '  0 output errors, 0 collisions, 2 resets',
+  ];
+}
+
+function showInterfacesCounters(_state: DeviceState): string[] {
+  return [
+    'Port          InOctets  InUcastPkts  InMcastPkts  InBcastPkts',
+    'Fa0/1          18621894       142983           0         1203',
+    'Fa0/3          12450123        98234           0          876',
+    'Fa0/5           9876543        76543           0          654',
+    'Gi0/1         154367890      1234567           0         4567',
+    'Gi0/2          98765432       876543           0         3456',
+    '',
+    'Port         OutOctets OutUcastPkts OutMcastPkts OutBcastPkts',
+    'Fa0/1         26240110       201847           0          234',
+    'Fa0/3         17654321       134567           0          189',
+    'Fa0/5         13456789       103456           0          156',
+    'Gi0/1        234567890      1876543           0         6789',
+    'Gi0/2        156789012      1234567           0         4567',
+  ];
+}
+
+function showInterfacesCountersErrors(_state: DeviceState): string[] {
+  return [
+    'Port        Align-Err   FCS-Err   Xmit-Err   Rcv-Err  UnderSize OutDiscards',
+    'Fa0/1               0         0          0         0          0           0',
+    'Fa0/3               0         0          0         0          0           0',
+    'Fa0/5               0         0          0         0          0           0',
+    'Gi0/1               0         0          0         0          0           0',
+    'Gi0/2               0         0          0         0          0           0',
+  ];
+}
+
+function showInterfacesCountersTrunk(_state: DeviceState): string[] {
+  return [
+    'Port        TrunkFramesTx  TrunkFramesRx  WrongEncap',
+    'Gi0/1           1234567890     9876543210           0',
+    'Gi0/2            987654321     8765432109           0',
+  ];
+}
+
+function showIpTraffic(_state: DeviceState): string[] {
+  return [
+    'IP statistics:',
+    '  Rcvd:  142983 total, 142983 local destination',
+    '         0 format errors, 0 checksum errors, 0 bad hop count',
+    '         0 unknown protocol, 0 not a gateway',
+    '         0 security failures, 0 bad options, 0 with options',
+    '  Opts:  0 end, 0 nop, 0 basic security, 0 loose source route',
+    '         0 timestamp, 0 extended security, 0 record route',
+    '         0 stream ID, 0 strict source route, 0 alert, 0 cipso, 0 ump',
+    '         0 other',
+    "  Frags: 0 reassembled, 0 timeouts, 0 couldn't reassemble",
+    "         0 fragmented, 0 fragments, 0 couldn't fragment",
+    '  Bcast: 4567 received, 8901 sent',
+    '  Mcast: 234 received, 456 sent',
+    '  Sent:  201847 generated, 0 forwarded',
+    '  Drop:  0 encapsulation failed, 0 unresolved, 0 no adjacency',
+    '         0 no route, 0 unicast RPF, 0 forced drop, 0 recycled',
+    '         0 options denied',
+  ];
+}
+
+function showIpCache(_state: DeviceState): string[] {
+  return [
+    'IP Flow Switching Cache, 278544 bytes',
+    '  0 active, 4096 inactive, 0 added',
+    '  0 ager polls, 0 flow alloc failures',
+    '  Active flows timeout in 30 minutes',
+    '  Inactive flows timeout in 15 seconds',
+    'IP Sub Flow Cache, 25800 bytes',
+    '  0 active, 1024 inactive, 0 added, 0 added to flow',
+    '  0 alloc failures, 0 force expire',
+    '  0 chunk, 0 chunk added',
+    '',
+    '  Protocol         Total    Flows   Packets Bytes  Packets Active(Sec) Idle(Sec)',
+    '  --------         Flows     /Sec     /Flow  /Pkt     /Sec     /Flow     /Flow',
+    '  Total:               0      0.0       0.0    0       0.0       0.0      0.0',
+  ];
+}
+
+function showTechSupport(state: DeviceState): string[] {
+  const sections: { title: string; lines: string[] }[] = [
+    { title: 'show version', lines: showVersion(state) },
+    { title: 'show running-config', lines: showRunningConfig(state) },
+    { title: 'show interfaces', lines: showInterfaces(state) },
+    { title: 'show ip interface brief', lines: showIpInterfaceBrief(state) },
+    { title: 'show ip route', lines: showIpRoute(state) },
+    { title: 'show vlan brief', lines: showVlan(state, true) },
+    { title: 'show mac address-table', lines: showMacTable(state, false) },
+    { title: 'show arp', lines: showArp(state) },
+    { title: 'show spanning-tree', lines: showSpanningTree(state) },
+    { title: 'show cdp neighbors', lines: showCdpNeighbors(state, false) },
+    { title: 'show processes cpu', lines: showProcessesCpu(state) },
+    { title: 'show memory', lines: showMemory(state) },
+    { title: 'show logging', lines: showLogging(state) },
+  ];
+  const ls: string[] = [];
+  for (const section of sections) {
+    ls.push(`------------------ ${section.title} ------------------`);
+    ls.push('');
+    ls.push(...section.lines);
+    ls.push('');
+  }
+  return ls;
+}
+
 export const showHandler: CommandHandler = (args, state, _raw, _negated) => {
   // Parse pipe operator: args may contain '|' as a token
   let mainArgs = args;
@@ -1809,6 +1984,13 @@ export const showHandler: CommandHandler = (args, state, _raw, _negated) => {
     if (sub2lower === 'trunk') {
       return makeResult(showInterfacesTrunk(state));
     }
+    // show interfaces counters [errors|trunk]
+    if (sub2lower === 'counters') {
+      const sub3lower = (mainArgs[2] || '').toLowerCase();
+      if (sub3lower === 'errors') return makeResult(showInterfacesCountersErrors(state));
+      if (sub3lower === 'trunk') return makeResult(showInterfacesCountersTrunk(state));
+      return makeResult(showInterfacesCounters(state));
+    }
     const rest = mainArgs.slice(1).join('');
     if (!rest) return makeResult(showInterfaces(state));
     const ifId = resolveInterface(rest, state);
@@ -1852,6 +2034,8 @@ export const showHandler: CommandHandler = (args, state, _raw, _negated) => {
       return makeResult(showIpDhcpBinding(state));
     }
     if (sub2 === 'ssh') return makeResult(showIpSsh(state));
+    if (sub2 === 'traffic') return makeResult(showIpTraffic(state));
+    if (sub2 === 'cache') return makeResult(showIpCache(state));
     return { output: [out(`% Unrecognized show ip subcommand: ${sub2}`, 'error')] };
   }
 
@@ -1957,6 +2141,20 @@ export const showHandler: CommandHandler = (args, state, _raw, _negated) => {
   if (sub === 'sessions') return makeResult(showSessions(state));
 
   if (sub.startsWith('term') || sub === 'terminal') return makeResult(showTerminal(state));
+
+  if (sub === 'tech-support' || sub === 'tech') {
+    return makeResult(showTechSupport(state));
+  }
+
+  if (sub === 'platform') {
+    const sub2lower = sub2.toLowerCase();
+    if (sub2lower === 'tcam') return makeResult(showPlatformTcam(state));
+    return makeResult(showPlatform(state));
+  }
+
+  if (sub.startsWith('cont') || sub === 'controllers') {
+    return makeResult(showControllers(state));
+  }
 
   if (sub === 'file' && sub2 === 'systems') {
     return makeResult([

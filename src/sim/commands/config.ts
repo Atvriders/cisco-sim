@@ -93,6 +93,9 @@ export const configHandler: CommandHandler = (args, state, raw, negated) => {
     if (sub === 'password-encryption') {
       return { output: [], newState: { servicePasswordEncryption: !negated, unsavedChanges: true } };
     }
+    if (sub === 'dhcp') {
+      return { output: [], newState: { dhcpEnabled: !negated, unsavedChanges: true } };
+    }
     return { output: [out('% Unknown service command', 'error')] };
   }
 
@@ -158,6 +161,31 @@ export const configHandler: CommandHandler = (args, state, raw, negated) => {
       return { output: [], newState: { unsavedChanges: true } };
     }
 
+    if (sub === 'http') {
+      // ip http server / ip http secure-server / ip http authentication local
+      return { output: [], newState: { unsavedChanges: true } };
+    }
+
+    if (sub === 'source-route') {
+      return { output: [], newState: { unsavedChanges: true } };
+    }
+
+    if (sub === 'classless') {
+      return { output: [], newState: { unsavedChanges: true } };
+    }
+
+    if (sub === 'domain-lookup') {
+      return { output: [], newState: { unsavedChanges: true } };
+    }
+
+    if (sub === 'forward-protocol') {
+      return { output: [], newState: { unsavedChanges: true } };
+    }
+
+    if (sub === 'finger') {
+      return { output: [], newState: { unsavedChanges: true } };
+    }
+
     if (sub === 'access-list') {
       const aclType = (args[2] || '').toLowerCase();
       const name = args[3];
@@ -203,7 +231,75 @@ export const configHandler: CommandHandler = (args, state, raw, negated) => {
         }
         return { output: [], newState: { unsavedChanges: true } };
       }
+
+      if (sub2 === 'pool') {
+        const poolName = args[3];
+        if (!poolName) return { output: [out('% Incomplete command.', 'error')] };
+        if (negated) {
+          return { output: [], newState: { dhcpPools: state.dhcpPools.filter(p => p.name !== poolName), unsavedChanges: true } };
+        }
+        const existingPool = state.dhcpPools.find(p => p.name === poolName);
+        if (!existingPool) {
+          const newPool: DhcpPool = { name: poolName, network: '', mask: '', leaseTime: 1, excludedAddresses: [] };
+          return { output: [], newState: { dhcpPools: [...state.dhcpPools, newPool], unsavedChanges: true } };
+        }
+        return { output: [] };
+      }
+
+      if (sub2 === 'excluded-address') {
+        const start = args[3];
+        const end = args[4];
+        if (!start) return { output: [out('% Incomplete command.', 'error')] };
+        if (negated) {
+          return { output: [], newState: { dhcpExcludedAddresses: state.dhcpExcludedAddresses.filter(e => !(e.start === start && (end ? e.end === end : !e.end))), unsavedChanges: true } };
+        }
+        return { output: [], newState: { dhcpExcludedAddresses: [...state.dhcpExcludedAddresses, { start, ...(end ? { end } : {}) }], unsavedChanges: true } };
+      }
+
       return { output: [out(`% Unknown ip dhcp subcommand: ${sub2}`, 'error')] };
+    }
+
+    if (sub === 'nat') {
+      const sub2 = (args[2] || '').toLowerCase();
+
+      if (sub2 === 'pool') {
+        const name = args[3];
+        const startIp = args[4];
+        const endIp = args[5];
+        const prefixIdx = args.indexOf('prefix-length');
+        const prefix = prefixIdx >= 0 ? parseInt(args[prefixIdx + 1] || '24') : 24;
+        if (!name || !startIp || !endIp) return { output: [out('% Incomplete command.', 'error')] };
+        if (negated) {
+          return { output: [], newState: { natConfig: { ...state.natConfig, pools: state.natConfig.pools.filter(p => p.name !== name) }, unsavedChanges: true } };
+        }
+        const newNatPools = [...state.natConfig.pools.filter(p => p.name !== name), { name, startIp, endIp, prefix }];
+        return { output: [], newState: { natConfig: { ...state.natConfig, pools: newNatPools }, unsavedChanges: true } };
+      }
+
+      if (sub2 === 'inside') {
+        const sub3 = (args[3] || '').toLowerCase();
+        if (sub3 === 'source') {
+          const sub4 = (args[4] || '').toLowerCase();
+          if (sub4 === 'static') {
+            const localIp = args[5];
+            const globalIp = args[6];
+            if (!localIp || !globalIp) return { output: [out('% Incomplete command.', 'error')] };
+            if (negated) {
+              return { output: [], newState: { natConfig: { ...state.natConfig, staticMappings: state.natConfig.staticMappings.filter(m => m.localIp !== localIp) }, unsavedChanges: true } };
+            }
+            const newMappings = [...state.natConfig.staticMappings.filter(m => m.localIp !== localIp), { localIp, globalIp }];
+            return { output: [], newState: { natConfig: { ...state.natConfig, staticMappings: newMappings }, unsavedChanges: true } };
+          }
+          if (sub4 === 'list') {
+            const acl = args[5];
+            const overload = args.includes('overload');
+            if (!acl) return { output: [out('% Incomplete command.', 'error')] };
+            return { output: [], newState: { natConfig: { ...state.natConfig, accessList: acl, overload }, unsavedChanges: true } };
+          }
+        }
+      }
+
+      return { output: [out(`% Unknown ip nat subcommand: ${sub2}`, 'error')] };
     }
 
     if (sub === 'arp') {
@@ -244,6 +340,42 @@ export const configHandler: CommandHandler = (args, state, raw, negated) => {
         return { output: [], newState: { ntp: { ...state.ntp, servers: state.ntp.servers.filter(s => s !== server) }, unsavedChanges: true } };
       }
       return { output: [], newState: { ntp: { ...state.ntp, servers: [...state.ntp.servers, server], synchronized: true, referenceServer: server }, unsavedChanges: true } };
+    }
+    if (sub === 'master') {
+      if (negated) return { output: [], newState: { ntp: { ...state.ntp, master: false, masterStratum: undefined }, unsavedChanges: true } };
+      const stratum = args[2] ? parseInt(args[2]) : 8;
+      return { output: [], newState: { ntp: { ...state.ntp, master: true, masterStratum: stratum }, unsavedChanges: true } };
+    }
+    if (sub === 'authenticate') {
+      return { output: [], newState: { ntp: { ...state.ntp, authenticate: !negated }, unsavedChanges: true } };
+    }
+    if (sub === 'authentication-key') {
+      const keyId = parseInt(args[2] || '');
+      const keyType = (args[3] || '').toLowerCase();
+      const keyVal = args[4];
+      if (isNaN(keyId) || !keyVal) return { output: [out('% Incomplete command.', 'error')] };
+      if (negated) {
+        const newKeys = (state.ntp.authKeys || []).filter(k => k.id !== keyId);
+        return { output: [], newState: { ntp: { ...state.ntp, authKeys: newKeys }, unsavedChanges: true } };
+      }
+      const newKeys = [...(state.ntp.authKeys || []).filter(k => k.id !== keyId), { id: keyId, type: 'md5' as const, key: keyVal }];
+      return { output: [], newState: { ntp: { ...state.ntp, authKeys: newKeys }, unsavedChanges: true } };
+    }
+    if (sub === 'trusted-key') {
+      const keyId = parseInt(args[2] || '');
+      if (isNaN(keyId)) return { output: [out('% Incomplete command.', 'error')] };
+      if (negated) {
+        const newKeys = (state.ntp.trustedKeys || []).filter(k => k !== keyId);
+        return { output: [], newState: { ntp: { ...state.ntp, trustedKeys: newKeys }, unsavedChanges: true } };
+      }
+      const newKeys = [...(state.ntp.trustedKeys || []).filter(k => k !== keyId), keyId];
+      return { output: [], newState: { ntp: { ...state.ntp, trustedKeys: newKeys }, unsavedChanges: true } };
+    }
+    if (sub === 'source') {
+      const ifArg = args.slice(2).join('');
+      if (negated) return { output: [], newState: { ntp: { ...state.ntp, source: undefined }, unsavedChanges: true } };
+      if (!ifArg) return { output: [out('% Incomplete command.', 'error')] };
+      return { output: [], newState: { ntp: { ...state.ntp, source: ifArg }, unsavedChanges: true } };
     }
     return { output: [out('% Unknown ntp command', 'error')] };
   }
@@ -567,25 +699,169 @@ export const configHandler: CommandHandler = (args, state, raw, negated) => {
 
   if (cmd === 'spanning-tree') {
     const sub = (args[1] || '').toLowerCase();
+
+    // spanning-tree mode pvst|rapid-pvst|mst
+    if (sub === 'mode') {
+      const mode = (args[2] || '').toLowerCase() as StpMode;
+      if (mode !== 'pvst' && mode !== 'rapid-pvst' && mode !== 'mst') {
+        return { output: [out('% Invalid STP mode. Use pvst, rapid-pvst, or mst', 'error')] };
+      }
+      const modeOutput = mode === 'mst'
+        ? [out("% MST requires 'spanning-tree mst configuration' to be configured")]
+        : [];
+      return { output: modeOutput, newState: { stpMode: mode, unsavedChanges: true } };
+    }
+
+    // spanning-tree mst configuration / spanning-tree mst <id> priority|root
+    if (sub === 'mst') {
+      const sub2 = (args[2] || '').toLowerCase();
+
+      if (sub2 === 'configuration') {
+        return {
+          output: [out('% Enter MST config sub-mode commands: name, revision, instance', 'info')],
+          newState: { unsavedChanges: true }
+        };
+      }
+
+      const mstId = parseInt(args[2] || '');
+      if (!isNaN(mstId)) {
+        const sub3 = (args[3] || '').toLowerCase();
+        const instances = state.mstConfig.instances.map(i => ({ ...i }));
+        const instIdx = instances.findIndex(i => i.id === mstId);
+        if (instIdx < 0) return { output: [out(`% MST instance ${mstId} not found`, 'error')] };
+
+        if (sub3 === 'priority') {
+          const pri = parseInt(args[4] || '32768');
+          instances[instIdx] = { ...instances[instIdx], localBridgePriority: pri };
+          return { output: [], newState: { mstConfig: { ...state.mstConfig, instances }, unsavedChanges: true } };
+        }
+        if (sub3 === 'root') {
+          const sub4 = (args[4] || '').toLowerCase();
+          const newPri = sub4 === 'primary' ? 24576 : 28672;
+          instances[instIdx] = { ...instances[instIdx], localBridgePriority: newPri };
+          return { output: [], newState: { mstConfig: { ...state.mstConfig, instances }, unsavedChanges: true } };
+        }
+        return { output: [out('% Unknown spanning-tree mst command', 'error')] };
+      }
+      return { output: [out('% Unknown spanning-tree mst command', 'error')] };
+    }
+
+    // MST sub-mode inline commands: name, revision, instance
+    if (sub === 'name' && args[2]) {
+      return { output: [], newState: { mstConfig: { ...state.mstConfig, name: args[2] }, unsavedChanges: true } };
+    }
+    if (sub === 'revision') {
+      const rev = parseInt(args[2] || '0');
+      return { output: [], newState: { mstConfig: { ...state.mstConfig, revision: rev }, unsavedChanges: true } };
+    }
+    if (sub === 'instance') {
+      const instId = parseInt(args[2] || '');
+      if (isNaN(instId)) return { output: [out('% Invalid instance ID', 'error')] };
+      if (negated) {
+        const instances = state.mstConfig.instances.filter(i => i.id !== instId);
+        return { output: [], newState: { mstConfig: { ...state.mstConfig, instances }, unsavedChanges: true } };
+      }
+      const sub3 = (args[3] || '').toLowerCase();
+      if (sub3 === 'vlan') {
+        const vlanRange = args[4] || '';
+        const vlans: number[] = [];
+        for (const part of vlanRange.split(',')) {
+          const rangeParts = part.split('-');
+          if (rangeParts.length === 2) {
+            const start = parseInt(rangeParts[0]);
+            const end = parseInt(rangeParts[1]);
+            for (let v = start; v <= end; v++) vlans.push(v);
+          } else {
+            const v = parseInt(part);
+            if (!isNaN(v)) vlans.push(v);
+          }
+        }
+        const existing = state.mstConfig.instances.find(i => i.id === instId);
+        const newInst = existing
+          ? { ...existing, vlans }
+          : { id: instId, vlans, rootBridgeMac: '0019.e8a2.3c00', rootBridgePriority: 32768, localBridgePriority: 32768, rootCost: 0 };
+        const instances = state.mstConfig.instances.filter(i => i.id !== instId);
+        instances.push(newInst);
+        instances.sort((a, b) => a.id - b.id);
+        return { output: [], newState: { mstConfig: { ...state.mstConfig, instances }, unsavedChanges: true } };
+      }
+      return { output: [out('% Incomplete command.', 'error')] };
+    }
+
+    // spanning-tree vlan <id> priority|root|max-age|hello-time|forward-time
     if (sub === 'vlan') {
       const vid = parseInt(args[2] || '');
       const sub2 = (args[3] || '').toLowerCase();
       if (isNaN(vid)) return { output: [out('% Invalid VLAN ID', 'error')] };
+      const newStp = { ...state.spanningTree };
       if (sub2 === 'priority') {
         if (negated) {
-          const newStp = { ...state.spanningTree };
           if (newStp[vid]) newStp[vid] = { ...newStp[vid], localBridgePriority: 32768 + vid };
           return { output: [], newState: { spanningTree: newStp, unsavedChanges: true } };
         }
         const pri = parseInt(args[4] || '32768');
-        const newStp = { ...state.spanningTree };
         if (newStp[vid]) newStp[vid] = { ...newStp[vid], localBridgePriority: pri + vid };
         return { output: [], newState: { spanningTree: newStp, unsavedChanges: true } };
       }
+      if (sub2 === 'root') {
+        const sub3 = (args[4] || '').toLowerCase();
+        if (sub3 === 'primary') {
+          if (newStp[vid]) {
+            const cur = newStp[vid].localBridgePriority - vid;
+            const newPri = Math.max(24576, cur - 4096);
+            newStp[vid] = { ...newStp[vid], localBridgePriority: newPri + vid };
+          }
+          return { output: [], newState: { spanningTree: newStp, unsavedChanges: true } };
+        }
+        if (sub3 === 'secondary') {
+          if (newStp[vid]) newStp[vid] = { ...newStp[vid], localBridgePriority: 28672 + vid };
+          return { output: [], newState: { spanningTree: newStp, unsavedChanges: true } };
+        }
+        return { output: [out('% Incomplete command.', 'error')] };
+      }
+      if (sub2 === 'max-age') {
+        const val = parseInt(args[4] || '20');
+        if (newStp[vid]) newStp[vid] = { ...newStp[vid], maxAge: val };
+        return { output: [], newState: { spanningTree: newStp, unsavedChanges: true } };
+      }
+      if (sub2 === 'hello-time') {
+        const val = parseInt(args[4] || '2');
+        if (newStp[vid]) newStp[vid] = { ...newStp[vid], helloTime: val };
+        return { output: [], newState: { spanningTree: newStp, unsavedChanges: true } };
+      }
+      if (sub2 === 'forward-time') {
+        const val = parseInt(args[4] || '15');
+        if (newStp[vid]) newStp[vid] = { ...newStp[vid], forwardDelay: val };
+        return { output: [], newState: { spanningTree: newStp, unsavedChanges: true } };
+      }
+      return { output: [out('% Unknown spanning-tree vlan command', 'error')] };
     }
-    if (sub === 'mode') {
+
+    // spanning-tree portfast default / spanning-tree portfast bpduguard default
+    if (sub === 'portfast') {
+      const sub2 = (args[2] || '').toLowerCase();
+      if (sub2 === 'bpduguard') {
+        const sub3 = (args[3] || '').toLowerCase();
+        if (sub3 === 'default') {
+          return { output: [], newState: { stpBpduguardDefault: !negated, unsavedChanges: true } };
+        }
+      }
+      if (sub2 === 'default') {
+        return { output: [], newState: { stpPortfastDefault: !negated, unsavedChanges: true } };
+      }
       return { output: [], newState: { unsavedChanges: true } };
     }
+
+    // spanning-tree loopguard default
+    if (sub === 'loopguard') {
+      return { output: [], newState: { stpLoopguardDefault: !negated, unsavedChanges: true } };
+    }
+
+    // spanning-tree backbonefast
+    if (sub === 'backbonefast') {
+      return { output: [], newState: { stpBackbonefast: !negated, unsavedChanges: true } };
+    }
+
     return { output: [out('% Unknown spanning-tree command', 'error')] };
   }
 

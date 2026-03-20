@@ -498,6 +498,49 @@ export const execHandler: CommandHandler = (args, state, raw, _negated) => {
     return { output: [out('% Feature not supported in simulator', 'system')] };
   }
 
+  if (cmd === 'test') {
+    const sub = (args[1] || '').toLowerCase();
+    if (sub === 'cable-diagnostics') {
+      const sub2 = (args[2] || '').toLowerCase();
+      if (sub2 === 'tdr') {
+        const ifArg = args[4] || args[3] || 'FastEthernet0/1';
+        const displayIf = ifArg.replace(/^fa(?:st(?:ethernet)?)?(\d+\/\d+)$/i, 'FastEthernet$1')
+                              .replace(/^gi(?:ga(?:bit(?:ethernet)?)?)?(\d+\/\d+)$/i, 'GigabitEthernet$1');
+        return {
+          output: [
+            out(`TDR test started on interface ${displayIf}`),
+            out(`A TDR test can take a few seconds to run on an interface`),
+            out(`Use 'show cable-diagnostics tdr' to read the TDR results.`),
+          ]
+        };
+      }
+    }
+    return { output: [out(`% Unknown test command: ${raw}`, 'error')] };
+  }
+
+  if (cmd === 'show' && (args[1] || '').toLowerCase() === 'cable-diagnostics') {
+    const sub2 = (args[2] || '').toLowerCase();
+    if (sub2 === 'tdr') {
+      const ifArg = args[4] || args[3] || '';
+      const displayIf = ifArg
+        ? ifArg.replace(/^fa(?:st(?:ethernet)?)?(\d+\/\d+)$/i, 'Fa$1')
+               .replace(/^gi(?:ga(?:bit(?:ethernet)?)?)?(\d+\/\d+)$/i, 'Gi$1')
+        : 'Fa0/1';
+      return {
+        output: [
+          out('TDR test last run on: March 20 15:30:01 '),
+          out(''),
+          out('Interface Speed Local pair Pair length        Remote pair Pair status'),
+          out('--------- ----- ---------- ------------------ ----------- --------------------'),
+          out(`${displayIf.padEnd(10)}100M  Pair A     1    +/- 1  meters Pair A      Normal`),
+          out(`          ${' '.repeat(6)}Pair B     1    +/- 1  meters Pair B      Normal`),
+          out(`          ${' '.repeat(6)}Pair C     1    +/- 1  meters Pair C      Normal`),
+          out(`          ${' '.repeat(6)}Pair D     1    +/- 1  meters Pair D      Normal`),
+        ]
+      };
+    }
+  }
+
   return {
     output: [out(`% Unknown command: ${raw}`, 'error')]
   };
