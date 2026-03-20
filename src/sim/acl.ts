@@ -34,7 +34,10 @@ export function matchAcl(
     const protoMatch = !protocol || !entry.protocol || entry.protocol === 'ip' || entry.protocol === protocol;
 
     if (srcMatch && dstMatch && protoMatch) {
-      entry.matches++; // Increment hit counter
+      // NOTE: entry.matches++ intentionally mutates shared state for ACL hit counters.
+      // This is acceptable because ACL entries are not used as React state keys and
+      // the counter is display-only; using immer or a copy here would be wasteful.
+      entry.matches++;
       return entry.action;
     }
   }
@@ -54,10 +57,15 @@ export function pingPermitted(targetIp: string, state: DeviceState): boolean {
   const iface = state.interfaces[ifId];
   if (!iface) return true;
 
-  // Check outbound ACL
+  // Check outbound ACL — use the interface's own IP as source (or fallback to any
+  // configured IP on the device). Using 127.0.0.1 here would never match a real
+  // ACL entry that permits/denies the device's own address range.
+  const srcIp = iface.ipAddresses.length > 0
+    ? iface.ipAddresses[0].address
+    : (Object.values(state.interfaces).find(i => i.ipAddresses.length > 0)?.ipAddresses[0].address ?? '0.0.0.0');
   const outAcl = iface.ipAccessGroups.find(g => g.direction === 'out');
   if (outAcl) {
-    const result = matchAcl(outAcl.acl, '127.0.0.1', targetIp, 'icmp', state);
+    const result = matchAcl(outAcl.acl, srcIp, targetIp, 'icmp', state);
     if (result === 'deny') return false;
   }
 

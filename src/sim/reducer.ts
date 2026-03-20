@@ -173,7 +173,14 @@ export function reducer(state: SimState, action: SimAction): SimState {
           ]);
         } else if (pendingType === 'copy-start-run') {
           if (session.deviceState.startupConfig) {
-            newDeviceState = { ...session.deviceState.startupConfig as DeviceState, startupConfig: session.deviceState.startupConfig };
+            // Restore startup config but always reset to user-exec mode and clear
+            // the mode context so we never land in a stale config sub-mode.
+            newDeviceState = {
+              ...session.deviceState.startupConfig as DeviceState,
+              startupConfig: session.deviceState.startupConfig,
+              mode: 'user-exec' as const,
+              modeContext: { type: 'none' as const },
+            };
           }
           resultLines = resultLines.concat([out('[OK]', 'success')]);
         } else if (pendingType === 'copy-run-tftp-ip') {

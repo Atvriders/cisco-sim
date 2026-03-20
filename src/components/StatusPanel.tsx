@@ -39,9 +39,11 @@ function modeLabel(mode: string): string {
 }
 
 export default function StatusPanel({ deviceState }: Props) {
-  // Live uptime counter
+  // Live uptime counter — tick wall-clock independently so uptime advances smoothly
+  // between TICK dispatches. We do NOT add (currentTime - bootTime) here because
+  // deviceState.currentTime is already updated by the TICK action every second;
+  // combining both would double-count the elapsed seconds since mount.
   const [liveTime, setLiveTime] = useState(Date.now());
-  const mountTimeRef = useRef(Date.now());
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -50,8 +52,9 @@ export default function StatusPanel({ deviceState }: Props) {
     return () => clearInterval(interval);
   }, []);
 
-  // Use the actual device bootTime relative to live clock
-  const elapsed = liveTime - mountTimeRef.current + (deviceState.currentTime - deviceState.bootTime);
+  // Compute uptime purely from the device's own bootTime vs the live wall clock.
+  // bootTime is set to Date.now() at device boot/reload so this is always accurate.
+  const elapsed = liveTime - deviceState.bootTime;
   const uptime = formatUptime(elapsed);
 
   // Stable CPU value using useMemo seeded once - won't change on re-renders

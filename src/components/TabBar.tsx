@@ -8,18 +8,16 @@ interface Props {
   onClose: (id: number) => void;
 }
 
-function sessionLabel(index: number): string {
-  if (index === 0) return 'CON 0';
-  return `VTY ${index - 1}`;
-}
-
 export default function TabBar({ sessions, activeId, onSwitch, onNew, onClose }: Props) {
   return (
     <div className="tab-bar">
-      {sessions.map((session, index) => {
+      {sessions.map((session) => {
         const isActive = session.id === activeId;
         const hasUnsaved = session.deviceState.unsavedChanges;
-        const label = sessionLabel(index);
+        // Use the label stored on the session itself (set by createSession in reducer)
+        // rather than re-deriving from array index, which breaks if sessions are
+        // ever reordered or the array contains gaps after a close.
+        const label = session.label;
         return (
           <button
             key={session.id}
