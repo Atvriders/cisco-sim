@@ -3493,6 +3493,34 @@ function showAaa(state: DeviceState, servers: boolean): string[] {
     ls.push('             Response: unexpected 0, server error 0, incorrect 0, time 0ms');
     ls.push('             Transaction: success 0, failure 0');
 
+
+    ls.push('     Account: request 0, timeouts 0, failover 0, retransmission 0');
+    ls.push('             Response: start 0, interim 0, stop 0');
+    ls.push('             Response: unexpected 0, server error 0, incorrect 0, time 0ms');
+    ls.push('             Transaction: success 0, failure 0');
+    ls.push('     Elapsed time since counters last cleared: 2m');
+    return ls;
+  }
+  const ls: string[] = [];
+  ls.push('AAA: enabled');
+  ls.push('');
+  ls.push('Authentication lists:');
+  for (const l of state.aaa.authenticationLists) {
+    ls.push(`  ${l.name}: ${l.methods.join(', ')}`);
+  }
+  ls.push('');
+  ls.push('Authorization lists:');
+  for (const l of state.aaa.authorizationLists) {
+    ls.push(`  ${l.type} ${l.name}: ${l.methods.join(', ')}`);
+  }
+  ls.push('');
+  ls.push('Accounting lists:');
+  for (const l of state.aaa.accountingLists) {
+    ls.push(`  ${l.type} ${l.name}: ${l.methods.join(', ')}`);
+  }
+  return ls;
+}
+
 function showDot1x(_state: DeviceState): string[] {
   return [
     'Sysauthcontrol              Enabled',
@@ -3688,32 +3716,6 @@ function showInterfacesDescription(state: DeviceState): string[] {
   return ls;
 }
 
-    ls.push('     Account: request 0, timeouts 0, failover 0, retransmission 0');
-    ls.push('             Response: start 0, interim 0, stop 0');
-    ls.push('             Response: unexpected 0, server error 0, incorrect 0, time 0ms');
-    ls.push('             Transaction: success 0, failure 0');
-    ls.push('     Elapsed time since counters last cleared: 2m');
-    return ls;
-  }
-  const ls: string[] = [];
-  ls.push('AAA: enabled');
-  ls.push('');
-  ls.push('Authentication lists:');
-  for (const l of state.aaa.authenticationLists) {
-    ls.push(`  ${l.name}: ${l.methods.join(', ')}`);
-  }
-  ls.push('');
-  ls.push('Authorization lists:');
-  for (const l of state.aaa.authorizationLists) {
-    ls.push(`  ${l.type} ${l.name}: ${l.methods.join(', ')}`);
-  }
-  ls.push('');
-  ls.push('Accounting lists:');
-  for (const l of state.aaa.accountingLists) {
-    ls.push(`  ${l.type} ${l.name}: ${l.methods.join(', ')}`);
-  }
-  return ls;
-}
 
 function showIpSlaStatistics(state: DeviceState, id?: number): string[] {
   const ls: string[] = [];
@@ -4413,6 +4415,67 @@ export const showHandler: CommandHandler = (args, state, _raw, _negated) => {
   if (sub === 'errdisable') {
     if (sub2 === 'detect') return makeResult(showErrdisableDetect(state));
     return makeResult(showErrdisableRecovery(state));
+  }
+
+  // show dot1x [all | interface <id> | statistics interface <id>]
+  if (sub === 'dot1x') {
+    if (sub2 === 'all') {
+      return makeResult(showDot1xAll(state));
+    }
+    if (sub2 === 'statistics') {
+      const sub3 = (mainArgs[2] || '').toLowerCase();
+      if (sub3.startsWith('int') || sub3 === 'interface') {
+        const rest = mainArgs.slice(3).join('');
+        const ifId = rest ? resolveInterface(rest, state) : null;
+        return makeResult(showDot1xStatisticsInterface(ifId || 'Fa0/1'));
+      }
+      return makeResult(showDot1xStatisticsInterface('Fa0/1'));
+    }
+    if (sub2.startsWith('int') || sub2 === 'interface') {
+      const rest = mainArgs.slice(2).join('');
+      const ifId = rest ? resolveInterface(rest, state) : null;
+      if (!ifId) return { output: [out('% Invalid interface specified', 'error')] };
+      return makeResult(showDot1xInterface(ifId));
+    }
+    // show dot1x (no sub) = global summary
+    if (!sub2) return makeResult(showDot1x(state));
+    return makeResult(showDot1x(state));
+  }
+
+  // show authentication sessions [interface <id>]
+  if (sub === 'authentication') {
+    if (sub2.startsWith('ses') || sub2 === 'sessions') {
+      const sub3 = (mainArgs[2] || '').toLowerCase();
+      if (sub3.startsWith('int') || sub3 === 'interface') {
+        const rest = mainArgs.slice(3).join('');
+        const ifId = rest ? resolveInterface(rest, state) : null;
+        if (!ifId) return { output: [out('% Invalid interface specified', 'error')] };
+        return makeResult(showAuthenticationSessionsInterface(ifId));
+      }
+      return makeResult(showAuthenticationSessions(state));
+    }
+    return makeResult(showAuthenticationSessions(state));
+  }
+
+  // show vrrp [brief]
+  if (sub === 'vrrp') {
+    if (sub2 === 'brief') return makeResult(showVrrpBrief(state));
+    return makeResult(showVrrp(state));
+  }
+
+  // show power inline [interface <id>]
+  if (sub === 'power') {
+    if (sub2 === 'inline') {
+      const sub3 = (mainArgs[2] || '').toLowerCase();
+      if (sub3.startsWith('int') || sub3 === 'interface') {
+        const rest = mainArgs.slice(3).join('');
+        const ifId = rest ? resolveInterface(rest, state) : null;
+        if (!ifId) return { output: [out('% Invalid interface specified', 'error')] };
+        return makeResult(showPowerInlineInterface(ifId));
+      }
+      return makeResult(showPowerInline(state));
+    }
+    return makeResult(showPowerInline(state));
   }
 
   return {
