@@ -66,10 +66,10 @@ function cdpCapabilityString(cap: string): string {
 function showVersion(state: DeviceState): string[] {
   const uptime = formatUptime(state.currentTime - state.bootTime);
   return [
-    'Cisco IOS Software, Version 15.7(3)M3, RELEASE SOFTWARE (fc2)',
+    'Cisco IOS Software, Version 15.2(7)E6, RELEASE SOFTWARE (fc2)',
     'Technical Support: http://www.cisco.com/techsupport',
-    'Copyright (c) 1986-2018 by Cisco Systems, Inc.',
-    'Compiled Wed 01-Aug-18 16:45 by prod_rel_team',
+    'Copyright (c) 1986-2022 by Cisco Systems, Inc.',
+    'Compiled Thu 28-Apr-22 07:49 by prod_rel_team',
     '',
     'ROM: Bootstrap program is C2960X boot loader',
     'BOOTLDR: C2960X Boot Loader (C2960X-HBOOT-M) Version 15.2(7r)E2',
@@ -104,7 +104,7 @@ function showVersion(state: DeviceState): string[] {
     '',
     'Switch Ports Model                     SW Version            SW Image',
     '------ ----- -----                     ----------            ----------',
-    '*    1 52    WS-C2960X-48TS-L          15.7(3)M3             C2960X-UNIVERSALK9-M',
+    '*    1 52    WS-C2960X-48TS-L          15.2(7)E6             C2960X-UNIVERSALK9-M',
     '',
     '',
     'Configuration register is 0xF',
@@ -145,7 +145,7 @@ function showRunningConfig(state: DeviceState): string[] {
   ls.push('!');
   ls.push('! Last configuration change');
   ls.push('!');
-  ls.push('version 15.7');
+  ls.push('version 15.2');
   ls.push('service timestamps debug datetime msec');
   ls.push('service timestamps log datetime msec');
   if (state.servicePasswordEncryption) {
@@ -159,6 +159,27 @@ function showRunningConfig(state: DeviceState): string[] {
   ls.push('boot-start-marker');
   ls.push('boot-end-marker');
   ls.push('!');
+  // Logging configuration (appears before AAA in IOS running-config)
+  if (state.loggingEnabled && state.loggingServer) {
+    ls.push(`logging ${state.loggingServer}`);
+    ls.push(`logging trap ${state.syslogLevel}`);
+    ls.push('!');
+  }
+  // AAA configuration
+  if (state.aaa.newModel) {
+    ls.push('aaa new-model');
+    ls.push('!');
+    for (const l of state.aaa.authenticationLists) {
+      ls.push(`aaa authentication login ${l.name} ${l.methods.join(' ')}`);
+    }
+    for (const l of state.aaa.authorizationLists) {
+      ls.push(`aaa authorization ${l.type} ${l.name} ${l.methods.join(' ')}`);
+    }
+    for (const l of state.aaa.accountingLists) {
+      ls.push(`aaa accounting ${l.type} ${l.name} start-stop ${l.methods.join(' ')}`);
+    }
+    ls.push('!');
+  }
   ls.push('!');
   if (state.enableSecret) {
     // Always show as type 5 (MD5 hash) format
@@ -170,12 +191,6 @@ function showRunningConfig(state: DeviceState): string[] {
       : `enable password ${state.enablePassword}`);
   }
   ls.push('!');
-  if (state.domainName) ls.push(`ip domain-name ${state.domainName}`);
-  ls.push('!');
-  if (state.cryptoKeyRsa) {
-    ls.push(`crypto key generate rsa modulus ${state.cryptoKeyRsa.modulus}`);
-    ls.push('!');
-  }
   for (const u of state.users) {
     if (u.secret) {
       ls.push(state.servicePasswordEncryption
@@ -186,11 +201,23 @@ function showRunningConfig(state: DeviceState): string[] {
     }
   }
   ls.push('!');
+  if (state.domainName) ls.push(`ip domain-name ${state.domainName}`);
+  ls.push('!');
+  if (state.cryptoKeyRsa) {
+    ls.push(`crypto key generate rsa modulus ${state.cryptoKeyRsa.modulus}`);
+    ls.push('!');
+  }
   if (state.banner) {
     ls.push(`banner motd ^`);
     ls.push(state.banner);
     ls.push('^');
   }
+  // VTP configuration (appears before spanning-tree and VLANs)
+  ls.push('!');
+  ls.push(`vtp mode ${state.vtp.mode}`);
+  if (state.vtp.domain) ls.push(`vtp domain ${state.vtp.domain}`);
+  if (state.vtp.version !== 1) ls.push(`vtp version ${state.vtp.version}`);
+  if (state.vtp.password) ls.push(`vtp password ${state.vtp.password}`);
   ls.push('!');
 
   // VLANs (1-1001 only - extended range VLANs 1002-1005 are always present, not shown in config)
@@ -450,12 +477,6 @@ function showRunningConfig(state: DeviceState): string[] {
   ls.push('!');
   for (const s of state.ntp.servers) ls.push(`ntp server ${s}`);
 
-  // Logging
-  if (state.loggingEnabled && state.loggingServer) {
-    ls.push(`logging ${state.loggingServer}`);
-    ls.push(`logging trap ${state.syslogLevel}`);
-  }
-
   // Lines
   ls.push('!');
   for (const lc of state.lines) {
@@ -555,8 +576,13 @@ function showInterfaces(state: DeviceState, ifFilter?: string): string[] {
     const dly = iface.id.startsWith('Gi') ? 10 : iface.id.startsWith('Loopback') ? 5000 : iface.id.startsWith('Vlan') ? 10 : 100;
     ls.push(`  MTU ${iface.mtu} bytes, BW ${bw} Kbit/sec, DLY ${dly} usec,`);
     ls.push(`     reliability 255/255, txload 1/255, rxload 1/255`);
-    ls.push(`  Encapsulation ARPA, loopback not set`);
-    ls.push(`  Keepalive set (10 sec)`);
+    if (iface.id.startsWith('Loopback')) {
+      ls.push(`  Encapsulation LOOPBACK, loopback not set`);
+      ls.push(`  Keepalive not set`);
+    } else {
+      ls.push(`  Encapsulation ARPA, loopback not set`);
+      ls.push(`  Keepalive set (10 sec)`);
+    }
 
     const duplexStr = iface.duplex === 'full' ? 'Full-duplex' : iface.duplex === 'half' ? 'Half-duplex' : 'Auto-duplex';
     const speedStr = iface.speed === 'auto' ? 'Auto-Speed' : `${iface.speed}Mb/s`;
@@ -570,10 +596,10 @@ function showInterfaces(state: DeviceState, ifFilter?: string): string[] {
     ls.push(`  Queueing strategy: fifo`);
     ls.push(`  Output queue: 0/40 (size/max)`);
 
-    const inRate = iface.lineState === 'up' ? Math.floor(iface.inputBytes / 3600) : 0;
-    const outRate = iface.lineState === 'up' ? Math.floor(iface.outputBytes / 3600) : 0;
-    const inPktRate = iface.lineState === 'up' ? Math.max(1, Math.floor(iface.inputPackets / 3600)) : 0;
-    const outPktRate = iface.lineState === 'up' ? Math.max(1, Math.floor(iface.outputPackets / 3600)) : 0;
+    const inRate = iface.lineState === 'up' ? Math.floor(iface.inputBytes * 8 / 300) : 0;
+    const outRate = iface.lineState === 'up' ? Math.floor(iface.outputBytes * 8 / 300) : 0;
+    const inPktRate = iface.lineState === 'up' ? Math.max(1, Math.floor(iface.inputPackets / 300)) : 0;
+    const outPktRate = iface.lineState === 'up' ? Math.max(1, Math.floor(iface.outputPackets / 300)) : 0;
     ls.push(`  5 minute input rate ${inRate} bits/sec, ${inPktRate} packets/sec`);
     ls.push(`  5 minute output rate ${outRate} bits/sec, ${outPktRate} packets/sec`);
     ls.push(`     ${iface.inputPackets} packets input, ${iface.inputBytes} bytes, 0 no buffer`);
@@ -722,8 +748,8 @@ function showVlan(state: DeviceState, brief: boolean): string[] {
     const firstLine = `${padLeft(String(v.id), 4)} ${padRight(v.name, 32)} ${padRight(v.state, 9)} ${portLines[0] || ''}`;
     ls.push(firstLine);
     for (let i = 1; i < portLines.length; i++) {
-      // Continuation lines: pad to ports column (47 chars)
-      ls.push(`${''.padStart(47)}${portLines[i]}`);
+      // Continuation lines: pad to ports column (48 chars: 4+1+32+1+9+1)
+      ls.push(`${''.padStart(48)}${portLines[i]}`);
     }
   }
 
@@ -824,7 +850,8 @@ function showIpRoute(state: DeviceState): string[] {
   if (defIdx >= 0) {
     const r = routesCopy[defIdx];
     const src = 'S*';
-    let line = `${padRight(src, 7)}0.0.0.0/0 [${r.adminDistance}/${r.metric}]`;
+    // Real IOS: S* padded to 2 chars then spaces to column 9
+    let line = `${padRight(src, 2)}       0.0.0.0/0 [${r.adminDistance}/${r.metric}]`;
     if (r.nextHop) line += ` via ${r.nextHop}`;
     if (r.age) line += `, ${r.age}`;
     ls.push(line);
@@ -848,22 +875,25 @@ function showIpRoute(state: DeviceState): string[] {
     const subnets = rts.length;
     const masks = new Set(rts.map(r => maskToCidr(r.mask)));
     const majorBase = major.split('/')[0];
+    // Real IOS includes prefix length of the subnet mask in the header
+    const firstCidr = maskToCidr(rts[0].mask);
     if (masks.size > 1) {
       ls.push(`      ${majorBase} is variably subnetted, ${subnets} subnets, ${masks.size} masks`);
     } else {
-      // Always show subnet header line on real IOS
-      ls.push(`      ${majorBase} is subnetted, ${subnets} subnet${subnets !== 1 ? 's' : ''}`);
+      // Always show subnet header line on real IOS (includes /<cidr> in header)
+      ls.push(`      ${majorBase}/${firstCidr} is subnetted, ${subnets} subnet${subnets !== 1 ? 's' : ''}`);
     }
     for (const r of rts) {
+      // Real IOS: code char(s) left-aligned, then spaces to fill 9-char prefix column, then network
       const srcLabel = r.source;
-      let line = `${padRight(srcLabel, 7)}  ${r.network}/${maskToCidr(r.mask)} [${r.adminDistance}/${r.metric}]`;
+      let line = `${padRight(srcLabel, 2)}       ${r.network}/${maskToCidr(r.mask)} [${r.adminDistance}/${r.metric}]`;
       if (r.nextHop && r.interface) {
-        line += ` via ${r.nextHop}, ${r.age}, ${r.interface}`;
+        line += ` via ${r.nextHop}, ${r.age || '0:00:00'}, ${r.interface}`;
       } else if (r.nextHop) {
         line += ` via ${r.nextHop}`;
         if (r.age) line += `, ${r.age}`;
       } else if (r.interface) {
-        line += ` is directly connected, ${r.interface}`;
+        line += `, directly connected, ${r.interface}`;
       }
       ls.push(line);
     }
@@ -882,24 +912,26 @@ function showSpanningTree(state: DeviceState, vlanId?: number): string[] {
 
     ls.push(`VLAN${String(vid).padStart(4, '0')}`);
     ls.push(`  Spanning tree enabled protocol ieee`);
+    // Root ID section — shows Cost and Port when this bridge is not the root
     ls.push(`  Root ID    Priority    ${stp.rootBridgePriority}`);
     ls.push(`             Address     ${stp.rootBridgeMac}`);
     if (stp.rootBridgeIsLocal) {
       ls.push(`             This bridge is the root`);
-    }
-    ls.push(`             Hello Time   ${stp.helloTime} sec  Max Age ${stp.maxAge} sec  Forward Delay ${stp.forwardDelay} sec`);
-    ls.push('');
-    ls.push(`  Bridge ID  Priority    ${stp.localBridgePriority}  (priority ${stp.localBridgePriority - vid} sys-id-ext ${vid})`);
-    ls.push(`             Address     ${stp.localBridgeMac}`);
-    ls.push(`             Hello Time   ${stp.helloTime} sec  Max Age ${stp.maxAge} sec  Forward Delay ${stp.forwardDelay} sec`);
-    ls.push(`             Aging Time  300 sec`);
-    if (!stp.rootBridgeIsLocal) {
+      ls.push(`             Hello Time   ${stp.helloTime} sec  Max Age ${stp.maxAge} sec  Forward Delay ${stp.forwardDelay} sec`);
+    } else {
       if (stp.rootPort) {
-        ls.push(`             Cost         ${stp.rootCost}`);
-        ls.push(`             Port         ${shortIfName(stp.rootPort)}`);
+        ls.push(`             Cost        ${stp.rootCost}`);
+        ls.push(`             Port        ${stp.rootPort.replace(/^Fa(\d)/, 'FastEthernet$1').replace(/^Gi(\d)/, 'GigabitEthernet$1')}`);
       }
       ls.push(`             Hello Time   ${stp.helloTime} sec  Max Age ${stp.maxAge} sec  Forward Delay ${stp.forwardDelay} sec`);
     }
+    ls.push('');
+    // Bridge ID section — always shows priority with sys-id-ext annotation
+    const basePriority = stp.localBridgePriority - vid;
+    ls.push(`  Bridge ID  Priority    ${stp.localBridgePriority}  (priority ${basePriority} sys-id-ext ${vid})`);
+    ls.push(`             Address     ${stp.localBridgeMac}`);
+    ls.push(`             Hello Time   ${stp.helloTime} sec  Max Age ${stp.maxAge} sec  Forward Delay ${stp.forwardDelay} sec`);
+    ls.push(`             Aging Time  300 sec`);
     ls.push('');
     ls.push('Interface           Role Sts Cost      Prio.Nbr Type');
     ls.push('------------------- ---- --- --------- -------- --------------------------------');
@@ -1167,7 +1199,9 @@ function showIpOspfNeighbor(state: DeviceState): string[] {
   const ls: string[] = [];
   ls.push('Neighbor ID     Pri   State           Dead Time   Address         Interface');
   for (const nb of state.ospf.neighbors) {
-    ls.push(`${padRight(nb.neighborId, 16)}${padLeft(String(nb.priority), 3)}   ${padRight(nb.state + '/DR', 16)}${padRight(nb.deadTime, 12)}${padRight(nb.address, 16)}${nb.interface}`);
+    // Real IOS shows full state as "FULL/DR", "FULL/BDR", "FULL/DROTHER" etc.
+    const drState = (nb as { drState?: string }).drState || 'DR';
+    ls.push(`${padRight(nb.neighborId, 16)}${padLeft(String(nb.priority), 3)}   ${padRight(nb.state + '/' + drState, 16)}${padRight(nb.deadTime, 12)}${padRight(nb.address, 16)}${nb.interface}`);
   }
   return ls;
 }
@@ -2449,8 +2483,8 @@ function showIpOspfDetail(state: DeviceState): string[] {
   ls.push(` Supports Database Exchange Summary List Optimization (RFC 5243)`);
   ls.push(` Event-log enabled, Maximum number of events: 1000, Mode: cyclic`);
   ls.push(` Router is not originating router-LSAs with maximum metric`);
-  ls.push(` Initial SPF schedule delay 5000 msecs`);
-  ls.push(` Minimum hold time between two consecutive SPFs 10000 msecs`);
+  ls.push(` Initial SPF schedule delay 500 msecs`);
+  ls.push(` Minimum hold time between two consecutive SPFs 1000 msecs`);
   ls.push(` Maximum wait time between two consecutive SPFs 10000 msecs`);
   ls.push(` Incremental-SPF disabled`);
   ls.push(` Minimum LSA interval 5 secs`);
