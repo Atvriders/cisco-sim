@@ -410,18 +410,14 @@ export function reducer(state: SimState, action: SimAction): SimState {
     }
 
     case 'HELP_QUERY': {
-      // Show help without submitting — like Tab but for ?
-      // Echo the prompt+input+? line, then show help, but leave currentInput unchanged
+      // Show help without submitting — no echo line, input stays intact
       const helpSession = activeSession;
-      const helpPrompt = buildPrompt(helpSession.deviceState);
       const helpResult = dispatch(action.input + '?', helpSession.deviceState);
-      const echoHelpLine: TerminalLine = out(`${helpPrompt}${action.input}?`, 'input');
       const newSessionsHelp = state.sessions.map(s =>
         s.id === state.activeSessionId
-          ? { ...s, lines: [...s.lines, echoHelpLine, ...helpResult.output] }
+          ? { ...s, lines: [...s.lines, ...helpResult.output] }
           : s
       );
-      // currentInput stays unchanged — user continues typing from where they were
       return { ...state, sessions: newSessionsHelp };
     }
 
