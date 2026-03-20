@@ -154,6 +154,21 @@ function showRunningConfig(state: DeviceState): string[] {
     ls.push('no service password-encryption');
   }
   ls.push('!');
+  // VTP
+  if (state.vtp.domain) ls.push(`vtp domain ${state.vtp.domain}`);
+  ls.push(`vtp mode ${state.vtp.mode}`);
+  ls.push(`vtp version ${state.vtp.version}`);
+  ls.push('!');
+  // SNMP
+  for (const c of state.snmp.communities) {
+    ls.push(`snmp-server community ${c.name} ${c.access.toUpperCase()}${c.acl ? ' ' + c.acl : ''}`);
+  }
+  if (state.snmp.location) ls.push(`snmp-server location ${state.snmp.location}`);
+  if (state.snmp.contact) ls.push(`snmp-server contact ${state.snmp.contact}`);
+  for (const h of state.snmp.trapHosts) {
+    ls.push(`snmp-server host ${h.ip} version ${h.version} ${h.community}`);
+  }
+  ls.push('!');
   ls.push(`hostname ${state.hostname}`);
   ls.push('!');
   ls.push('boot-start-marker');
@@ -1447,6 +1462,212 @@ function showEtherchannelSummary(state: DeviceState): string[] {
     ls.push(`${padLeft(String(g),6)}  Po${g}(SU)        ${padRight(proto, 11)}${ports}`);
   }
 
+  return ls;
+}
+
+function showMlsQos(state: DeviceState): string[] {
+  const ls: string[] = [];
+  if (state.qosEnabled) {
+    ls.push('QoS is enabled');
+  } else {
+    ls.push('QoS is disabled');
+  }
+  ls.push('QoS ip packet dscp rewrite is disabled');
+  return ls;
+}
+
+function showMlsQosInterface(state: DeviceState, ifId?: string): string[] {
+  const ls: string[] = [];
+  const ifaces = ifId
+    ? [state.interfaces[ifId]].filter(Boolean) as Interface[]
+    : Object.values(state.interfaces).filter(i => i.id.startsWith('Fa') || i.id.startsWith('Gi'));
+  for (const iface of ifaces) {
+    const trust = iface.mlsQosTrust || 'not trusted';
+    const cos = iface.mlsQosCos !== undefined ? String(iface.mlsQosCos) : '0';
+    ls.push(expandIfNameFull(iface.id));
+    ls.push(`  trust state: ${trust}`);
+    ls.push(`  trust mode: ${trust}`);
+    ls.push(`  trust enabled flag: ena`);
+    ls.push(`  COS override: dis`);
+    ls.push(`  default COS: ${cos}`);
+    ls.push(`  DSCP Mutation Map: Default DSCP Mutation Map`);
+    ls.push(`  Trust device: none`);
+    ls.push(`  qos mode: port-based`);
+  }
+  return ls;
+}
+
+function showClassMap(state: DeviceState, name?: string): string[] {
+  const ls: string[] = [];
+  const maps = name ? state.classMaps.filter(c => c.name === name) : state.classMaps;
+  if (maps.length === 0) {
+    ls.push(name ? `% Class Map ${name} not found` : '');
+    return ls;
+  }
+  for (let i = 0; i < maps.length; i++) {
+    const cm = maps[i];
+    const matchStr = cm.matchType === 'any' ? 'match-any' : 'match-all';
+    ls.push(` Class Map ${matchStr} ${cm.name} (id ${i + 1})`);
+    if (cm.matchType === 'any') {
+      ls.push(`   Match any`);
+    } else if (cm.matchType === 'cos') {
+      ls.push(`   Match cos ${cm.matchValue || ''}`);
+    } else if (cm.matchType === 'dscp') {
+      ls.push(`   Match dscp ${cm.matchValue || ''}`);
+    } else if (cm.matchType === 'access-group') {
+      ls.push(`   Match access-group name ${cm.matchValue || ''}`);
+    } else if (cm.matchType === 'ip-precedence') {
+      ls.push(`   Match ip precedence ${cm.matchValue || ''}`);
+    }
+  }
+  return ls;
+}
+
+function showPolicyMap(state: DeviceState, name?: string): string[] {
+  const ls: string[] = [];
+  const maps = name ? state.policyMaps.filter(p => p.name === name) : state.policyMaps;
+  if (maps.length === 0) {
+    ls.push(name ? `% Policy Map ${name} not found` : '');
+    return ls;
+  }
+  for (const pm of maps) {
+    ls.push(`  Policy Map ${pm.name}`);
+    for (const cls of pm.classes) {
+      ls.push(`    Class ${cls.classMapName}`);
+      if (cls.priority !== undefined) ls.push(`      priority ${cls.priority} (kbps)`);
+      if (cls.bandwidth !== undefined) ls.push(`      bandwidth ${cls.bandwidth} (kbps)`);
+      if (cls.police) ls.push(`      police rate ${cls.police.rate} bps burst ${cls.police.burstNormal}`);
+      if (cls.set) ls.push(`      set ${cls.set.field} ${cls.set.value}`);
+    }
+  }
+  return ls;
+}
+
+function showPolicyMapInterface(state: DeviceState, ifId: string): string[] {
+  const iface = state.interfaces[ifId];
+  if (!iface) return [`% Interface ${ifId} not found`];
+  const ls: string[] = [];
+  ls.push(` ${expandIfNameFull(iface.id)}`);
+  ls.push('');
+
+  const renderPolicy = (policyName: string, dir: string) => {
+    const pm = state.policyMaps.find(p => p.name === policyName);
+    if (!pm) return;
+    ls.push(`  Service-policy ${dir}: ${policyName}`);
+    ls.push('');
+    for (const cls of pm.classes) {
+      const cm = state.classMaps.find(c => c.name === cls.classMapName);
+      const matchType = cm ? (cm.matchType === 'any' ? 'match-any' : 'match-all') : 'match-any';
+      ls.push(`    Class-map: ${cls.classMapName} (${matchType})`);
+      ls.push(`      0 packets, 0 bytes`);
+      ls.push(`      5 minute offered rate 0000 bps, drop rate 0000 bps`);
+      if (cm) {
+        if (cm.matchType === 'any') ls.push(`      Match: any`);
+        else if (cm.matchType === 'cos') ls.push(`      Match: cos ${cm.matchValue || ''}`);
+        else if (cm.matchType === 'dscp') ls.push(`      Match: dscp ${cm.matchValue || ''}`);
+      }
+      if (cls.priority !== undefined) {
+        const burst = Math.floor(cls.priority * 1000 / 8 / 100);
+        ls.push(`      Priority: ${cls.priority} kbps, burst bytes ${burst}, b/w exceed drops: 0`);
+      }
+      if (cls.bandwidth !== undefined) ls.push(`      bandwidth ${cls.bandwidth} kbps`);
+      ls.push('');
+    }
+  };
+
+  if (iface.servicePolicy?.in) renderPolicy(iface.servicePolicy.in, 'input');
+  if (iface.servicePolicy?.out) renderPolicy(iface.servicePolicy.out, 'output');
+  if (!iface.servicePolicy?.in && !iface.servicePolicy?.out) {
+    ls.push('  No service-policy applied');
+  }
+  return ls;
+}
+
+function showMonitorSession(state: DeviceState, sessionId?: number): string[] {
+  const ls: string[] = [];
+  const sessions = sessionId !== undefined
+    ? state.spanSessions.filter(s => s.id === sessionId)
+    : state.spanSessions;
+  if (sessions.length === 0) {
+    ls.push('No SPAN configuration is present');
+    return ls;
+  }
+  for (const s of sessions) {
+    ls.push(`Session ${s.id}`);
+    ls.push('---------');
+    ls.push(`Type                   : ${s.type === 'local' ? 'Local Session' : 'RSPAN Session'}`);
+    if (s.sourcePorts.length > 0) {
+      ls.push('Source Ports           :');
+      const rx = s.sourcePorts.filter(p => p.direction === 'rx').map(p => shortIfName(p.port));
+      const tx = s.sourcePorts.filter(p => p.direction === 'tx').map(p => shortIfName(p.port));
+      const both = s.sourcePorts.filter(p => p.direction === 'both').map(p => shortIfName(p.port));
+      if (rx.length) ls.push(`    RX                 : ${rx.join(', ')}`);
+      if (tx.length) ls.push(`    TX                 : ${tx.join(', ')}`);
+      if (both.length) ls.push(`    Both               : ${both.join(', ')}`);
+    }
+    if (s.sourceVlans && s.sourceVlans.length > 0) {
+      ls.push(`Source VLANs           :`);
+      ls.push(`    Both               : ${s.sourceVlans.join(', ')}`);
+    }
+    if (s.destination) {
+      ls.push(`Destination Ports      : ${shortIfName(s.destination)}`);
+      ls.push('    Encapsulation      : Native');
+      ls.push('          Ingress      : Disabled');
+    }
+    ls.push('');
+  }
+  return ls;
+}
+
+function showEtherchannelDetail(state: DeviceState, groupNum: number): string[] {
+  const ls: string[] = [];
+  const pc = state.portChannels.find(p => p.id === `Port-channel${groupNum}`);
+  const members = Object.values(state.interfaces).filter(i => i.channelGroup?.number === groupNum);
+  if (members.length === 0 && !pc) {
+    ls.push(`% No such channel-group ${groupNum}`);
+    return ls;
+  }
+  const proto = pc ? pc.protocol.toUpperCase() : (members[0]?.channelGroup?.mode === 'on' ? 'None' : 'LACP');
+  ls.push(`Group state = L2`);
+  ls.push(`Ports: ${members.length}   Maxports = 8`);
+  ls.push(`Port-channels: 1 Max Port-channels = 1`);
+  ls.push(`Protocol:   ${proto}`);
+  ls.push(`Minimum Links: 0`);
+  ls.push('');
+  ls.push('                Ports in the group:');
+  ls.push('                -------------------');
+  for (const m of members) {
+    ls.push(` Port: ${shortIfName(m.id)}`);
+    ls.push(`------------`);
+    ls.push(` GC   				Port Number = ${m.port}`);
+    ls.push(` HotStandBy port = null`);
+    ls.push(` Port state    = Port-channel Ag-Inuse`);
+    ls.push(` Channel group = ${groupNum}  Mode = ${m.channelGroup?.mode || 'on'}    Gcchange = -`);
+    ls.push(` Port-channel  = Po${groupNum}  GC = -  Pseudo port-channel = Po${groupNum}`);
+    ls.push(` Port index    = 0   Load = 0x00`);
+    ls.push('');
+  }
+  return ls;
+}
+
+function showInterfacesPortChannel(state: DeviceState, num: number): string[] {
+  const pc = state.portChannels.find(p => p.id === `Port-channel${num}`);
+  const members = Object.values(state.interfaces).filter(i => i.channelGroup?.number === num);
+  if (!pc && members.length === 0) {
+    return [`% Port-channel${num} not found`];
+  }
+  const ls: string[] = [];
+  const lineState = pc ? pc.lineState : (members.some(m => m.lineState === 'up') ? 'up' : 'down');
+  ls.push(`Port-channel${num} is up, line protocol is ${lineState}`);
+  ls.push(`  Hardware is EtherChannel, address is ${members[0]?.macAddress || '0000.0000.0000'}`);
+  ls.push(`  Description: Port-channel${num}`);
+  ls.push(`  MTU 1500 bytes, BW 200000 Kbit/sec, DLY 10 usec,`);
+  ls.push(`     reliability 255/255, txload 1/255, rxload 1/255`);
+  ls.push(`  Encapsulation ARPA, loopback not set`);
+  ls.push(`  Keepalive set (10 sec)`);
+  ls.push(`  Full-duplex, 100Mb/s, link type is auto, media type is unknown`);
+  ls.push(`  Members in this channel: ${members.map(m => shortIfName(m.id)).join(' ')}`);
+  ls.push(`  Last clearing of "show interface" counters never`);
   return ls;
 }
 
@@ -3038,6 +3259,22 @@ export const showHandler: CommandHandler = (args, state, _raw, _negated) => {
       if (sub3lower === 'trunk') return makeResult(showInterfacesCountersTrunk(state));
       return makeResult(showInterfacesCounters(state));
     }
+    // show interfaces switchport [<id>]
+    if (sub2lower === 'switchport') {
+      const rest3 = mainArgs.slice(2).join('');
+      if (!rest3) return makeResult(showInterfacesSwitchport(state));
+      const ifId3 = resolveInterface(rest3, state);
+      if (!ifId3) return { output: [out(`% Invalid interface specified`, 'error')] };
+      return makeResult(showInterfacesSwitchport(state, ifId3));
+    }
+    // show interfaces capabilities [<id>]
+    if (sub2lower === 'capabilities') {
+      const rest3 = mainArgs.slice(2).join('');
+      if (!rest3) return makeResult(showInterfacesCapabilities(state));
+      const ifId3 = resolveInterface(rest3, state);
+      if (!ifId3) return { output: [out(`% Invalid interface specified`, 'error')] };
+      return makeResult(showInterfacesCapabilities(state, ifId3));
+    }
     const rest = mainArgs.slice(1).join('');
     if (!rest) return makeResult(showInterfaces(state));
     const ifId = resolveInterface(rest, state);
@@ -3123,6 +3360,19 @@ export const showHandler: CommandHandler = (args, state, _raw, _negated) => {
       if (!isNaN(idArg2)) return makeResult(showIpSlaStatistics(state, idArg2));
       return makeResult(showIpSlaStatistics(state));
     }
+    if (sub2 === 'pim') {
+      const sub3 = (mainArgs[2] || '').toLowerCase();
+      if (sub3.startsWith('nei') || sub3 === 'neighbor') return makeResult(showIpPimNeighbor(state));
+      if (sub3.startsWith('int') || sub3 === 'interface') return makeResult(showIpPimInterface(state));
+      return makeResult(showIpPimNeighbor(state));
+    }
+    if (sub2 === 'mroute') return makeResult(showIpMroute(state));
+    if (sub2 === 'igmp') {
+      const sub3 = (mainArgs[2] || '').toLowerCase();
+      if (sub3.startsWith('gro') || sub3 === 'groups') return makeResult(showIpIgmpGroups(state));
+      if (sub3.startsWith('int') || sub3 === 'interface') return makeResult(showIpIgmpInterface(state));
+      return makeResult(showIpIgmpGroups(state));
+    }
     return { output: [out(`% Unrecognized show ip subcommand: ${sub2}`, 'error')] };
   }
 
@@ -3132,6 +3382,11 @@ export const showHandler: CommandHandler = (args, state, _raw, _negated) => {
   }
 
   if (sub === 'mac' || sub.startsWith('mac')) {
+    // show mac address-table aging-time
+    const joinedMacArgs = mainArgs.map(a => a.toLowerCase()).join(' ');
+    if (joinedMacArgs.includes('aging')) return makeResult(showMacAddressTableAgingTime(state));
+    if (joinedMacArgs.includes('count')) return makeResult(showMacAddressTableCount(state));
+    if (joinedMacArgs.includes('notif')) return makeResult(showMacAddressTableNotification(state));
     const dynamic = mainArgs.some(a => a.toLowerCase().startsWith('dyn'));
     return makeResult(showMacTable(state, dynamic));
   }
@@ -3348,6 +3603,12 @@ export const showHandler: CommandHandler = (args, state, _raw, _negated) => {
       return makeResult(showCryptoPkiCertificates(state));
     }
     return makeResult(showCryptoKeyMypubkeyRsa(state));
+  }
+
+  if (sub === 'errdisable') {
+    if (sub2 === 'detect') return makeResult(showErrdisableDetect(state));
+    // 'recovery' or default
+    return makeResult(showErrdisableRecovery(state));
   }
 
   return {
