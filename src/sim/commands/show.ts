@@ -3979,6 +3979,22 @@ export const showHandler: CommandHandler = (args, state, _raw, _negated) => {
       if (sub3lower === 'trunk') return makeResult(showInterfacesCountersTrunk(state));
       return makeResult(showInterfacesCounters(state));
     }
+    // show interfaces switchport [<id>]
+    if (sub2lower === 'switchport') {
+      const rest3 = mainArgs.slice(2).join('');
+      if (!rest3) return makeResult(showInterfacesSwitchport(state));
+      const ifId3 = resolveInterface(rest3, state);
+      if (!ifId3) return { output: [out(`% Invalid interface specified`, 'error')] };
+      return makeResult(showInterfacesSwitchport(state, ifId3));
+    }
+    // show interfaces capabilities [<id>]
+    if (sub2lower === 'capabilities') {
+      const rest3 = mainArgs.slice(2).join('');
+      if (!rest3) return makeResult(showInterfacesCapabilities(state));
+      const ifId3 = resolveInterface(rest3, state);
+      if (!ifId3) return { output: [out(`% Invalid interface specified`, 'error')] };
+      return makeResult(showInterfacesCapabilities(state, ifId3));
+    }
     const rest = mainArgs.slice(1).join('');
     if (!rest) return makeResult(showInterfaces(state));
     const ifId = resolveInterface(rest, state);
@@ -4108,6 +4124,19 @@ export const showHandler: CommandHandler = (args, state, _raw, _negated) => {
       if (!isNaN(idArg2)) return makeResult(showIpSlaStatistics(state, idArg2));
       return makeResult(showIpSlaStatistics(state));
     }
+    if (sub2 === 'pim') {
+      const sub3 = (mainArgs[2] || '').toLowerCase();
+      if (sub3.startsWith('nei') || sub3 === 'neighbor') return makeResult(showIpPimNeighbor(state));
+      if (sub3.startsWith('int') || sub3 === 'interface') return makeResult(showIpPimInterface(state));
+      return makeResult(showIpPimNeighbor(state));
+    }
+    if (sub2 === 'mroute') return makeResult(showIpMroute(state));
+    if (sub2 === 'igmp') {
+      const sub3 = (mainArgs[2] || '').toLowerCase();
+      if (sub3.startsWith('gro') || sub3 === 'groups') return makeResult(showIpIgmpGroups(state));
+      if (sub3.startsWith('int') || sub3 === 'interface') return makeResult(showIpIgmpInterface(state));
+      return makeResult(showIpIgmpGroups(state));
+    }
     return { output: [out(`% Unrecognized show ip subcommand: ${sub2}`, 'error')] };
   }
 
@@ -4117,6 +4146,10 @@ export const showHandler: CommandHandler = (args, state, _raw, _negated) => {
   }
 
   if (sub === 'mac' || sub.startsWith('mac')) {
+    const joinedMacArgs = mainArgs.map(a => a.toLowerCase()).join(' ');
+    if (joinedMacArgs.includes('aging')) return makeResult(showMacAddressTableAgingTime(state));
+    if (joinedMacArgs.includes('count')) return makeResult(showMacAddressTableCount(state));
+    if (joinedMacArgs.includes('notif')) return makeResult(showMacAddressTableNotification(state));
     const dynamic = mainArgs.some(a => a.toLowerCase().startsWith('dyn'));
     return makeResult(showMacTable(state, dynamic));
   }
@@ -4375,6 +4408,11 @@ export const showHandler: CommandHandler = (args, state, _raw, _negated) => {
       return makeResult(showCryptoPkiCertificates(state));
     }
     return makeResult(showCryptoKeyMypubkeyRsa(state));
+  }
+
+  if (sub === 'errdisable') {
+    if (sub2 === 'detect') return makeResult(showErrdisableDetect(state));
+    return makeResult(showErrdisableRecovery(state));
   }
 
   return {
