@@ -3235,9 +3235,25 @@ export const showHandler: CommandHandler = (args, state, _raw, _negated) => {
   if (sub.startsWith('log') || sub === 'logging') return makeResult(showLogging(state));
 
   if (sub === 'ntp') {
-    const sub3 = (mainArgs[1] || '').toLowerCase();
-    if (sub3.startsWith('sta') || sub3 === 'status') return makeResult(showNtpStatus(state));
+    if (sub2.startsWith('sta') || sub2 === 'status') return makeResult(showNtpStatus(state));
+    if (sub2.startsWith('ass') || sub2 === 'associations') {
+      const sub3 = (mainArgs[2] || '').toLowerCase();
+      if (sub3.startsWith('det') || sub3 === 'detail') return makeResult(showNtpAssociationsDetail(state));
+      return makeResult(showNtpAssociations(state));
+    }
     return makeResult(showNtpStatus(state));
+  }
+
+  if (sub === 'vtp') {
+    if (sub2.startsWith('sta') || sub2 === 'status') return makeResult(showVtpStatus(state));
+    if (sub2.startsWith('cou') || sub2 === 'counters') return makeResult(showVtpCounters(state));
+    if (sub2.startsWith('pas') || sub2 === 'password') return makeResult(showVtpPassword(state));
+    return makeResult(showVtpStatus(state));
+  }
+
+  if (sub === 'snmp') {
+    if (sub2.startsWith('com') || sub2 === 'community') return makeResult(showSnmpCommunity(state));
+    return makeResult(showSnmp(state));
   }
 
   if (sub.startsWith('ether') || sub === 'etherchannel') return makeResult(showEtherchannelSummary(state));
